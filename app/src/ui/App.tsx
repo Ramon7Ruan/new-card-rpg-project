@@ -1,5 +1,5 @@
-import { useEffect, useReducer, useState } from 'react';
-import { BLIND_NAMES, rewardFor, targetFor } from '../core/blinds';
+import { useEffect, useMemo, useReducer, useState } from 'react';
+import { BLIND_NAMES, MAX_ANTE, rewardFor, targetFor } from '../core/blinds';
 import { HAND_LABEL } from '../core/hands';
 import { getJoker, MAX_JOKERS } from '../core/jokers';
 import { clearRun, loadRun, saveRun } from '../core/persist';
@@ -47,6 +47,25 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
   const busy = anim !== null;
   const selectedCards = state.hand.filter((c) => state.selected.includes(c.id));
 
+  /**
+   * 选牌即算分：与出牌走同一个 scoreHand，因此预览值与真正结算值必然一致。
+   * 只在 playing 阶段且已选牌时计算。
+   */
+  const preview = useMemo<ScoreResult | null>(() => {
+    if (state.phase !== 'playing' || state.selected.length === 0) return null;
+    const played = state.hand.filter((c) => state.selected.includes(c.id));
+    if (played.length === 0) return null;
+    return scoreHand({
+      played,
+      jokers: state.jokers,
+      handLevels: state.handLevels,
+      money: state.money,
+      handsLeft: state.handsLeft,
+      discardsUsed: state.discardsUsed,
+      ante: state.ante,
+    });
+  }, [state]);
+
   function handlePlay() {
     if (state.phase !== 'playing' || busy) return;
     if (selectedCards.length === 0 || selectedCards.length > 5) return;
@@ -76,29 +95,42 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
   let total = 0;
   let handLabel = '';
   let stepLabel = '';
+  let boardMode: 'idle' | 'anim' | 'preview' = 'idle';
 
   if (anim && ev) {
+    // 播放中：以 trace 的当前事件为准
     chips = ev.chipsAfter;
     mult = ev.multAfter;
     handLabel = HAND_LABEL[anim.result.handType];
     stepLabel = ev.label;
+    boardMode = 'anim';
     if (anim.step === anim.result.events.length - 1) total = anim.result.score;
-  } else if (state.lastScore) {
-    chips = state.lastScore.chips;
-    mult = state.lastScore.mult;
-    total = state.lastScore.score;
-    handLabel = HAND_LABEL[state.lastScore.handType];
-    stepLabel = '';
+  } else if (preview) {
+    // 选牌中：直接显示这一手的最终结果，不再播放
+    chips = preview.chips;
+    mult = preview.mult;
+    total = preview.score;
+    handLabel = HAND_LABEL[preview.handType];
+    stepLabel = '预计本次得分';
+    boardMode = 'preview';
   }
 
   const progress = Math.min(100, Math.round((state.roundScore / Math.max(state.target, 1)) * 100));
+  const progressWithPreview = Math.min(
+    100,
+    Math.round(((state.roundScore + (preview?.score ?? 0)) / Math.max(state.target, 1)) * 100),
+  );
+  const remaining = Math.max(state.target - state.roundScore, 0);
+  const countedIds = preview ? new Set(preview.scoringCardIds) : null;
 
   return (
     <div className="app">
       <header className="topbar">
         <div className="stack">
           <span className="label">底注</span>
-          <span className="value">{state.ante}</span>
+          <span className="value">
+            {state.ante} / {MAX_ANTE}
+          </span>
         </div>
         <div className="stack">
           <span className="label">盲注</span>
@@ -133,6 +165,9 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
         <div className="table-area">
           <div className="round-head">
             <div className="target">选择本回合的盲注</div>
+            <div className="target">
+              第 <b>{state.ante}</b> / {MAX_ANTE} 底注
+            </div>
             <div className="spacer" style={{ flex: 1 }} />
             <span className="seed">SEED {state.seed}</span>
           </div>
@@ -168,10 +203,16 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
             <div className="target">
               已得 <b>{state.roundScore}</b>
             </div>
+            <div className="target">
+              还需 <b>{remaining}</b>
+            </div>
             <div className="spacer" style={{ flex: 1 }} />
             <span className="seed">SEED {state.seed}</span>
           </div>
           <div className="progress">
+            {preview && progressWithPreview > progress && (
+              <i className="ghost" style={{ width: `${progressWithPreview}%` }} />
+            )}
             <i style={{ width: `${progress}%` }} />
           </div>
 
@@ -193,15 +234,23 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
             )}
           </div>
 
-          <div className="score-board">
-            <div className="score-hand">{handLabel || '—'}</div>
+          <div className={`score-board ${boardMode}`}>
+            <div className="score-hand">{handLabel || '未选牌'}</div>
             <div className="score-row">
-              <span className="num chips">{chips}</span>
+              <span className="num chips">{boardMode === 'idle' ? '—' : chips}</span>
               <span className="times">×</span>
-              <span className="num mult">{mult}</span>
+              <span className="num mult">{boardMode === 'idle' ? '—' : mult}</span>
             </div>
             <div className="score-step">{stepLabel}</div>
-            <div className="score-total">{total > 0 ? `= ${total}` : ''}</div>
+            <div className="score-total">
+              {boardMode === 'idle'
+                ? '选中的牌会计入得分'
+                : boardMode === 'preview'
+                  ? `= ${total}`
+                  : total > 0
+                    ? `= ${total}`
+                    : ''}
+            </div>
           </div>
         </div>
       )}
@@ -213,6 +262,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
               key={c.id}
               card={c}
               selected={state.selected.includes(c.id)}
+              counted={!!countedIds?.has(c.id)}
               disabled={busy}
               onClick={() => dispatch({ type: 'toggleCard', cardId: c.id })}
             />
@@ -259,7 +309,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
             <h2>{state.phase === 'won' ? '通关' : '失败'}</h2>
             <p className="sub">
               {state.phase === 'won'
-                ? `打完三个盲注，最终资金 $${state.money}。`
+                ? `打完 ${MAX_ANTE} 个底注、共 ${MAX_ANTE * 3} 个盲注，最终资金 $${state.money}。`
                 : `出牌次数用尽，得分 ${state.roundScore} / ${state.target}。`}
             </p>
             <div className="ledger">

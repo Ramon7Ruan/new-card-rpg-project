@@ -4,19 +4,23 @@ import type { Card } from '../core/types';
 interface Props {
   card: Card;
   selected?: boolean;
+  /** 动画播放阶段：这张牌正在被计入 */
   scoring?: boolean;
+  /** 选牌预览阶段：这张牌会被计分（角标提示） */
+  counted?: boolean;
   small?: boolean;
   disabled?: boolean;
   onClick?: () => void;
 }
 
-export function CardView({ card, selected, scoring, small, disabled, onClick }: Props) {
+export function CardView({ card, selected, scoring, counted, small, disabled, onClick }: Props) {
   const cls = [
     'card',
     small ? 'card-sm' : '',
     isRedSuit(card.suit) ? 'is-red' : 'is-black',
     selected ? 'is-selected' : '',
     scoring ? 'is-scoring' : '',
+    counted ? 'is-counted' : '',
   ]
     .filter(Boolean)
     .join(' ');

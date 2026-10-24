@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { targetFor } from '../core/blinds';
+import { card, sortHand } from '../core/cards';
 import { createRun, HANDS_PER_ROUND, reducer } from '../core/run';
 import type { RunState } from '../core/types';
 
@@ -6,6 +8,14 @@ function startPlaying(seed = 'TESTSEED'): RunState {
   let s = createRun(seed);
   s = reducer(s, { type: 'selectBlind' });
   return s;
+}
+
+/** 一路推进到「打完本盲注并收完款」，返回 shop 态 */
+function finishRound(s: RunState): RunState {
+  let t: RunState = { ...s, target: 1, phase: 'playing' };
+  t = reducer(t, { type: 'toggleCard', cardId: t.hand[0].id });
+  t = reducer(t, { type: 'playHand' });
+  return reducer(t, { type: 'cashOut' });
 }
 
 describe('单局状态机', () => {
@@ -121,18 +131,73 @@ describe('单局状态机', () => {
     expect(s.shop?.rerollCost).toBe(6);
   });
 
-  it('打完三个盲注 → won', () => {
+  it('推进顺序：3 个盲注后进入下一底注，目标逐级提高', () => {
+    const seen: string[] = [];
     let s = startPlaying();
-    for (let blind = 0; blind < 3; blind++) {
-      s = { ...s, target: 1, phase: 'playing' };
-      s = reducer(s, { type: 'toggleCard', cardId: s.hand[0].id });
-      s = reducer(s, { type: 'playHand' });
-      s = reducer(s, { type: 'cashOut' });
-      if (s.phase === 'shop') s = reducer(s, { type: 'leaveShop' });
-      if (s.phase === 'blindSelect') {
-        s = reducer(s, { type: 'selectBlind' });
-      }
+
+    for (let i = 0; i < 6; i++) {
+      seen.push(`a${s.ante}b${s.blindIndex}=${s.target}`);
+      s = reducer(finishRound(s), { type: 'leaveShop' });
+      if (i < 5) s = reducer(s, { type: 'selectBlind' });
     }
+
+    expect(seen).toEqual([
+      'a1b0=300',
+      'a1b1=450',
+      'a1b2=600',
+      'a2b0=800',
+      'a2b1=1200',
+      'a2b2=1600',
+    ]);
+    // 最后一个底注的 Boss 打完即通关，不再进商店
     expect(s.phase).toBe('won');
+  });
+
+  it('底注与盲注越界时 targetFor 取最后一个底注的值', () => {
+    expect(targetFor(3, 0)).toBe(800);
+    expect(targetFor(99, 2)).toBe(1600);
+  });
+
+  it('上一手的得分不带到下一个盲注', () => {
+    let s = finishRound(startPlaying());
+    expect(s.lastScore).not.toBeNull();
+    s = reducer(s, { type: 'leaveShop' });
+    expect(s.lastScore).toBeNull();
+    expect(s.roundScore).toBe(0);
+  });
+});
+
+describe('手牌自动排序', () => {
+  it('发牌后点数升序（A 最大排最右）', () => {
+    for (const seed of ['S1', 'S2', 'S3', 'S4', 'S5']) {
+      const s = startPlaying(seed);
+      const ranks = s.hand.map((c) => c.rank);
+      expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    }
+  });
+
+  it('出牌补牌后仍然有序', () => {
+    let s = startPlaying('SORT');
+    s = reducer(s, { type: 'toggleCard', cardId: s.hand[2].id });
+    s = reducer(s, { type: 'playHand' });
+    if (s.phase === 'playing') {
+      const ranks = s.hand.map((c) => c.rank);
+      expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    }
+  });
+
+  it('sortHand：点数升序，同点数按 黑桃→红桃→梅花→方块', () => {
+    const input = [card('d', 14), card('c', 5), card('s', 5), card('h', 5), card('d', 5), card('s', 2)];
+    const sorted = sortHand(input);
+    expect(sorted.map((c) => c.id)).toEqual([
+      'spade-2',
+      'spade-5',
+      'heart-5',
+      'club-5',
+      'diamond-5',
+      'diamond-14',
+    ]);
+    // 不修改入参
+    expect(input[0].id).toBe('diamond-14');
   });
 });

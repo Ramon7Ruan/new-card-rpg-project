@@ -26,6 +26,24 @@ describe('渲染冒烟', () => {
     expect(cardCount).toBeGreaterThanOrEqual(8);
   });
 
+  it('选牌后立即显示牌型与预计得分', () => {
+    let s = createRun('PREVIEW');
+    s = reducer(s, { type: 'selectBlind' });
+    s = reducer(s, { type: 'toggleCard', cardId: s.hand[0].id });
+    const html = renderToString(<App initialState={s} />);
+    expect(html).toContain('预计本次得分');
+    expect(html).toContain('高牌');
+  });
+
+  it('未选牌时得分区留空，不显示上一手结果', () => {
+    let s = createRun('PREVIEW');
+    s = reducer(s, { type: 'selectBlind' });
+    s = { ...s, lastScore: { handType: 'flush', chips: 200, mult: 9, score: 1800, events: [], scoringCardIds: [] } };
+    const html = renderToString(<App initialState={s} />);
+    expect(html).toContain('未选牌');
+    expect(html).not.toContain('1800');
+  });
+
   it('商店页能渲染商品与重摇按钮', () => {
     let s = createRun('SMOKE');
     s = reducer(s, { type: 'selectBlind' });

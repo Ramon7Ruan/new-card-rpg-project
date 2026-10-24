@@ -12,6 +12,19 @@ export const SUIT_SYMBOL: Record<Suit, string> = {
 
 export const isRedSuit = (s: Suit): boolean => s === 'heart' || s === 'diamond';
 
+/** 同点数时的花色次序：黑桃 → 红桃 → 梅花 → 方块 */
+const SUIT_ORDER: Record<Suit, number> = { spade: 0, heart: 1, club: 2, diamond: 3 };
+
+/** 手牌排序：点数升序（A 最大），同点数按花色固定次序 */
+export function compareCards(a: Card, b: Card): number {
+  if (a.rank !== b.rank) return a.rank - b.rank;
+  return SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit];
+}
+
+export function sortHand(cards: Card[]): Card[] {
+  return cards.slice().sort(compareCards);
+}
+
 export function createDeck(): Card[] {
   const deck: Card[] = [];
   for (const suit of SUITS) {

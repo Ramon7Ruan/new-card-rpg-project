@@ -1,5 +1,6 @@
-import { rewardFor, targetFor } from './blinds';
-import { createDeck } from './cards';
+import { MAX_ANTE, rewardFor, targetFor } from './blinds';
+import { createDeck, sortHand } from './cards';
+
 import { initialHandLevels } from './hands';
 import { getJoker, MAX_JOKERS } from './jokers';
 import { makeRng, randomSeed, shuffle } from './rng';
@@ -59,7 +60,7 @@ function draw(
     hand.push(next);
   }
 
-  return { deck, discardPile, hand, shuffleCount };
+  return { deck, discardPile, hand: sortHand(hand), shuffleCount };
 }
 
 export type Action =
@@ -181,8 +182,8 @@ export function reducer(state: RunState, action: Action): RunState {
         if (def?.onRoundEnd) money += def.onRoundEnd({ money, ante: state.ante });
       }
 
-      // M0 打完 Boss 即通关
-      if (state.blindIndex >= 2) {
+      // 打完最后一个底注的 Boss 才通关
+      if (state.blindIndex >= 2 && state.ante >= MAX_ANTE) {
         return { ...state, money, phase: 'won' };
       }
       return { ...state, money, phase: 'shop', shop: rollShop(state.seed, state.ante * 10 + state.blindIndex) };
@@ -201,7 +202,10 @@ export function reducer(state: RunState, action: Action): RunState {
         money: state.money - offer.cost,
         jokers: [
           ...state.jokers,
-          { uid: `${offer.defId}-${state.blindIndex}-${state.jokers.length}`, defId: offer.defId },
+          {
+            uid: `${offer.defId}-a${state.ante}-b${state.blindIndex}-n${state.jokers.length}`,
+            defId: offer.defId,
+          },
         ],
         shop: { ...state.shop, offers },
       };
@@ -222,17 +226,22 @@ export function reducer(state: RunState, action: Action): RunState {
 
     case 'leaveShop': {
       if (state.phase !== 'shop') return state;
-      const blindIndex = state.blindIndex + 1;
+      // 打完 Boss 位则推进到下一底注，否则同底注的下一个盲注
+      const bossCleared = state.blindIndex >= 2;
+      const ante = bossCleared ? state.ante + 1 : state.ante;
+      const blindIndex = bossCleared ? 0 : state.blindIndex + 1;
       return {
         ...state,
+        ante,
         blindIndex,
         phase: 'blindSelect',
         shop: null,
-        target: targetFor(state.ante, blindIndex),
+        target: targetFor(ante, blindIndex),
         discardPile: [...state.discardPile, ...state.hand],
         hand: [],
         selected: [],
         roundScore: 0,
+        lastScore: null,
       };
     }
 

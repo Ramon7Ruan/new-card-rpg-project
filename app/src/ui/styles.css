@@ -192,6 +192,7 @@ button:disabled {
 }
 
 .progress {
+  position: relative;
   height: 4px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.07);
@@ -203,6 +204,16 @@ button:disabled {
   height: 100%;
   background: var(--teal);
   transition: width 0.35s ease;
+}
+
+/* 选牌预览：这一手打出去后进度会到的位置 */
+.progress > i.ghost {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(69, 179, 154, 0.38);
+  transition: width 0.18s ease;
 }
 
 .played-area {
@@ -271,6 +282,21 @@ button:disabled {
   font-size: 15px;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+
+/* 选牌预览态：结果尚未落定，用金色标出 */
+.score-board.preview .score-hand {
+  color: var(--text);
+}
+
+.score-board.preview .score-step {
+  color: var(--gold);
+  opacity: 0.75;
+}
+
+.score-board.preview .score-total {
+  color: var(--gold);
+  font-weight: 500;
 }
 
 /* ── 手牌 ── */
@@ -356,6 +382,19 @@ button:disabled {
 
 .card.is-scoring {
   box-shadow: 0 0 0 2px var(--teal), 0 6px 14px rgba(0, 0, 0, 0.4);
+}
+
+/* 选牌预览：会被计分的牌在左下角亮一个青点 */
+.card.is-counted::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  bottom: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--teal);
+  box-shadow: 0 0 7px rgba(69, 179, 154, 0.85);
 }
 
 .card:disabled {
