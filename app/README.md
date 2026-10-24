@@ -1,8 +1,6 @@
-# poker-rogue
+# new-card-rpg-project
 
 一个基于扑克牌型与筹码倍率的单人 Roguelike 卡牌游戏。纯前端，无后端、无登录、无联网。
-
-> 项目名暂定，待定名后修改。
 
 ## 运行
 

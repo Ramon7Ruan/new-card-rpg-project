@@ -1,6 +1,6 @@
 import type { RunState } from './types';
 
-const KEY = 'poker-rogue-run-v1';
+const KEY = 'new-card-rpg-project-run-v1';
 
 export function saveRun(state: RunState): void {
   try {
