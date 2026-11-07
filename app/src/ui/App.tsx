@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
+import type { Dispatch } from 'react';
 import {
   BLIND_NAMES,
   describeBlindRule,
@@ -8,13 +9,16 @@ import {
   rollBoss,
   targetFor,
 } from '../core/blinds';
+import { getConsumable, MAX_CONSUMABLES } from '../core/consumables';
 import { HAND_LABEL } from '../core/hands';
 import { getJoker, MAX_JOKERS } from '../core/jokers';
 import { clearRun, loadRun, saveRun } from '../core/persist';
-import { createRun, reducer } from '../core/run';
+import { createRun, reducer, type Action } from '../core/run';
 import { scoreHand } from '../core/scoring';
-import type { Card, RunState, ScoreResult } from '../core/types';
+import { sellValue } from '../core/shop';
+import type { Card, HandType, RunState, ScoreResult } from '../core/types';
 import { CardView } from './CardView';
+import { ConsumableView } from './ConsumableView';
 import { JokerView } from './JokerView';
 
 interface AnimState {
@@ -110,6 +114,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
   let mult = 0;
   let total = 0;
   let handLabel = '';
+  let handType: HandType | null = null;
   let stepLabel = '';
   let boardMode: 'idle' | 'anim' | 'preview' = 'idle';
 
@@ -118,6 +123,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
     chips = ev.chipsAfter;
     mult = ev.multAfter;
     handLabel = HAND_LABEL[anim.result.handType];
+    handType = anim.result.handType;
     stepLabel = ev.label;
     boardMode = 'anim';
     if (anim.step === anim.result.events.length - 1) total = anim.result.score;
@@ -127,9 +133,13 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
     mult = preview.mult;
     total = preview.score;
     handLabel = HAND_LABEL[preview.handType];
+    handType = preview.handType;
     stepLabel = '预计本次得分';
     boardMode = 'preview';
   }
+
+  /** 当前这手牌型的等级：只在 >1 时显示，避免到处是 Lv.1 噪音 */
+  const handLevel = handType ? (state.handLevels[handType] ?? 1) : 1;
 
   const progress = Math.min(100, Math.round((state.roundScore / Math.max(state.target, 1)) * 100));
   const progressWithPreview = Math.min(
@@ -142,6 +152,8 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
   /** 铁律：必须恰好出满 N 张 */
   const required = state.bossRule?.requirePlayedCards;
   const playBlocked = required ? state.selected.length !== required : state.selected.length === 0;
+  /** 消耗品只在牌桌与商店可用（与 useConsumable 的判定保持一致） */
+  const canUseConsumable = state.phase === 'playing' || state.phase === 'shop';
 
   return (
     <div className="app">
@@ -171,6 +183,20 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
           重开
         </button>
       </header>
+
+      {state.consumables.length > 0 && (
+        <section className="consumable-row">
+          <span className="row-label">铭文</span>
+          {state.consumables.map((inst, i) => (
+            <ConsumableView
+              key={inst.uid}
+              def={getConsumable(inst.defId)}
+              onUse={() => dispatch({ type: 'useConsumable', index: i })}
+              disabled={!canUseConsumable}
+            />
+          ))}
+        </section>
+      )}
 
       <section className="joker-row">
         {Array.from({ length: MAX_JOKERS }).map((_, i) => (
@@ -268,7 +294,10 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
           </div>
 
           <div className={`score-board ${boardMode}`}>
-            <div className="score-hand">{handLabel || '未选牌'}</div>
+            <div className="score-hand">
+              {handLabel || '未选牌'}
+              {handLabel && handLevel > 1 && <span className="lv">{`Lv.${handLevel}`}</span>}
+            </div>
             <div className="score-row">
               <span className="num chips">{boardMode === 'idle' ? '—' : chips}</span>
               <span className="times">×</span>
@@ -335,9 +364,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
       )}
 
       {state.phase === 'cashOut' && <CashOutPanel state={state} onConfirm={() => dispatch({ type: 'cashOut' })} />}
-      {state.phase === 'shop' && state.shop && (
-        <ShopPanel state={state} onBuy={(i) => dispatch({ type: 'buyJoker', index: i })} onReroll={() => dispatch({ type: 'reroll' })} onLeave={() => dispatch({ type: 'leaveShop' })} />
-      )}
+      {state.phase === 'shop' && state.shop && <ShopPanel state={state} dispatch={dispatch} />}
       {(state.phase === 'won' || state.phase === 'lost') && (
         <div className="overlay">
           <div className="panel">
@@ -424,54 +451,118 @@ function CashOutPanel({ state, onConfirm }: { state: RunState; onConfirm: () => 
   );
 }
 
-function ShopPanel({
-  state,
-  onBuy,
-  onReroll,
-  onLeave,
-}: {
-  state: RunState;
-  onBuy: (index: number) => void;
-  onReroll: () => void;
-  onLeave: () => void;
-}) {
+function ShopPanel({ state, dispatch }: { state: RunState; dispatch: Dispatch<Action> }) {
   const shop = state.shop;
   if (!shop) return null;
 
+  const jokerFull = state.jokers.length >= MAX_JOKERS;
+  const consumableFull = state.consumables.length >= MAX_CONSUMABLES;
+  const hasOwned = state.jokers.length > 0 || state.consumables.length > 0;
+
   return (
     <div className="overlay">
-      <div className="panel">
+      <div className="panel panel-shop">
         <h2>商店</h2>
         <p className="sub">
-          持有 ${state.money} · 小丑槽位 {state.jokers.length}/{MAX_JOKERS}
+          {`持有 $${state.money} · 小丑 ${state.jokers.length}/${MAX_JOKERS} · 铭文 ${state.consumables.length}/${MAX_CONSUMABLES}`}
         </p>
+
         <div className="shop-grid">
           {shop.offers.map((o, i) => {
-            const def = getJoker(o.defId);
+            const isConsumable = o.kind === 'consumable';
+            const def = isConsumable ? getConsumable(o.defId) : getJoker(o.defId);
             if (!def) return null;
-            const full = state.jokers.length >= MAX_JOKERS;
+
+            const full = isConsumable ? consumableFull : jokerFull;
             const poor = state.money < o.cost;
-            const disabled = o.sold || full || poor;
+            const label = o.sold ? '已售出' : poor ? '钱不够' : full ? '槽位已满' : '购买';
+
             return (
               <div key={`${o.defId}-${i}`} className={`shop-item ${o.sold ? 'is-sold' : ''}`}>
-                <div className="title">{def.name}</div>
+                <div className="shop-item-head">
+                  <span className="title">{def.name}</span>
+                  <span className={`kind-tag ${isConsumable ? 'is-consumable' : 'is-joker'}`}>
+                    {isConsumable ? '铭文' : '小丑'}
+                  </span>
+                </div>
                 <div className="desc">{def.desc}</div>
                 <div className="buy">
                   <span>${o.cost}</span>
-                  <button className="btn" disabled={disabled} onClick={() => onBuy(i)}>
-                    {o.sold ? '已售出' : full ? '槽位已满' : poor ? '钱不够' : '购买'}
+                  <button
+                    className="btn"
+                    disabled={o.sold || poor || full}
+                    onClick={() =>
+                      dispatch(
+                        isConsumable
+                          ? { type: 'buyConsumable', index: i }
+                          : { type: 'buyJoker', index: i },
+                      )
+                    }
+                  >
+                    {label}
                   </button>
                 </div>
               </div>
             );
           })}
         </div>
+
+        <div className="owned">
+          <div className="owned-head">
+            你的牌 <span className="owned-hint">卖出价 = 原价一半（最低 $1），只能在这里卖出</span>
+          </div>
+          {hasOwned ? (
+            <div className="owned-list">
+              {state.jokers.map((inst, i) => {
+                const def = getJoker(inst.defId);
+                if (!def) return null;
+                return (
+                  <div key={inst.uid} className="owned-item">
+                    <span className="owned-name">{def.name}</span>
+                    <span className="owned-desc">{def.desc}</span>
+                    <button
+                      className="btn btn-sell"
+                      onClick={() => dispatch({ type: 'sellJoker', index: i })}
+                    >
+                      {`卖出 $${sellValue(def.cost)}`}
+                    </button>
+                  </div>
+                );
+              })}
+              {state.consumables.map((inst, i) => {
+                const def = getConsumable(inst.defId);
+                if (!def) return null;
+                return (
+                  <div key={inst.uid} className="owned-item">
+                    <span className="owned-name">{def.name}</span>
+                    <span className="owned-desc">{def.desc}</span>
+                    <button className="btn" onClick={() => dispatch({ type: 'useConsumable', index: i })}>
+                      使用
+                    </button>
+                    <button
+                      className="btn btn-sell"
+                      onClick={() => dispatch({ type: 'sellConsumable', index: i })}
+                    >
+                      {`卖出 $${sellValue(def.cost)}`}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="owned-empty">还没有任何牌。买到的东西会出现在这里。</p>
+          )}
+        </div>
+
         <div className="panel-actions">
-          <button className="btn" disabled={state.money < shop.rerollCost} onClick={onReroll}>
-            重摇 ${shop.rerollCost}
-          </button>
-          <div className="spacer" />
-          <button className="btn btn-primary" onClick={onLeave}>
+          <button
+            className="btn"
+            disabled={state.money < shop.rerollCost}
+            onClick={() => dispatch({ type: 'reroll' })}
+          >
+            {`重摇 $${shop.rerollCost}`}
+          </button>          <div className="spacer" />
+          <button className="btn btn-primary" onClick={() => dispatch({ type: 'leaveShop' })}>
             继续下一盲注
           </button>
         </div>

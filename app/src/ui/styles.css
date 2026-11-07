@@ -161,6 +161,76 @@ button:disabled {
   color: var(--muted);
 }
 
+/* ── 消耗品槽（铭文） ── */
+.consumable-row {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 8px;
+  min-height: 84px;
+  position: relative;
+}
+
+.row-label {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  align-self: center;
+  margin-right: 2px;
+}
+
+.consumable {
+  width: 92px;
+  height: 84px;
+  border-radius: 7px;
+  padding: 6px 6px 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: linear-gradient(180deg, rgba(90, 169, 230, 0.1), var(--panel-2));
+  border: 1px solid rgba(90, 169, 230, 0.4);
+  overflow: hidden;
+}
+
+.consumable-empty {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--line);
+  opacity: 0.45;
+}
+
+.consumable-name {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.consumable-desc {
+  font-size: 9px;
+  line-height: 1.3;
+  color: var(--muted);
+  flex: 1;
+  overflow: hidden;
+}
+
+.use-btn {
+  border: 1px solid rgba(69, 179, 154, 0.5);
+  background: rgba(69, 179, 154, 0.12);
+  color: var(--teal);
+  border-radius: 4px;
+  font-size: 10px;
+  padding: 2px 0;
+  transition: background 0.15s;
+}
+
+.use-btn:hover:not(:disabled) {
+  background: rgba(69, 179, 154, 0.24);
+}
+
+.use-btn:disabled {
+  opacity: 0.35;
+}
+
 /* ── 牌桌 ── */
 .table-area {
   flex: 1;
@@ -242,6 +312,16 @@ button:disabled {
   font-size: 12px;
   color: var(--muted);
   letter-spacing: 0.06em;
+}
+
+.score-hand .lv {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(224, 177, 85, 0.16);
+  color: var(--gold);
+  font-size: 10px;
+  letter-spacing: 0.04em;
 }
 
 .score-row {
@@ -691,6 +771,102 @@ button:disabled {
   letter-spacing: 0.06em;
 }
 
+/* ── 商店：商品类型与卖出区 ── */
+.panel-shop {
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.shop-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.kind-tag {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.kind-tag.is-joker {
+  color: var(--mult);
+  background: rgba(224, 96, 63, 0.14);
+}
+
+.kind-tag.is-consumable {
+  color: var(--chip);
+  background: rgba(90, 169, 230, 0.14);
+}
+
+.owned {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.owned-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.owned-hint {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.owned-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.owned-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-2);
+}
+
+.owned-name {
+  flex: 0 0 66px;
+  font-size: 12px;
+}
+
+.owned-desc {
+  flex: 1;
+  min-width: 0;
+  font-size: 10px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owned-empty {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.btn-sell {
+  border-color: rgba(224, 177, 85, 0.35);
+  color: var(--gold);
+  font-size: 11px;
+  padding: 6px 10px;
+}
+
 /* ── 窄屏（≤720px）：只保证不横向溢出与可点，完整移动端版式留到 P7 ── */
 @media (max-width: 720px) {
   .app {
@@ -721,6 +897,31 @@ button:disabled {
     width: 54px;
     height: 72px;
     padding: 5px 4px;
+  }
+
+  .consumable-row {
+    min-height: 72px;
+    gap: 6px;
+  }
+
+  .consumable {
+    width: 84px;
+    height: 72px;
+    padding: 5px 5px 4px;
+  }
+
+  /* 窄屏没有横向余量放标签，靠卡面本身的「铭文」二字识别 */
+  .row-label {
+    display: none;
+  }
+
+  .owned-name {
+    flex-basis: 56px;
+    font-size: 11px;
+  }
+
+  .owned-desc {
+    display: none;
   }
 
   /* 手牌：8 张必须一眼看全，所以按可用宽度等分收缩，而不是横向滚动。

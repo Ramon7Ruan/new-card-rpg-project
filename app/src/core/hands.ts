@@ -34,13 +34,35 @@ export const HAND_BASE: Record<HandType, { chips: number; mult: number }> = {
 export const ALL_HAND_TYPES = Object.keys(HAND_BASE) as HandType[];
 
 /**
- * 等级恒为 1 时直接返回基础值。
- * M1 接星球牌时，在这里按牌型叠加每级增量（各牌型增量不同，需查表）。
+ * 每升 1 级的增量。数值为自定（非原版照搬），只保证「稀有牌型升级收益更高」。
+ * 这张表同时决定铭文（星球位）值不值得买，以及后续目标曲线的强度。
+ */
+export const HAND_LEVEL_GAIN: Record<HandType, { chips: number; mult: number }> = {
+  highCard: { chips: 12, mult: 1 },
+  pair: { chips: 18, mult: 1 },
+  twoPair: { chips: 22, mult: 1 },
+  threeOfAKind: { chips: 25, mult: 2 },
+  straight: { chips: 30, mult: 3 },
+  flush: { chips: 18, mult: 2 },
+  fullHouse: { chips: 28, mult: 2 },
+  fourOfAKind: { chips: 32, mult: 3 },
+  straightFlush: { chips: 42, mult: 4 },
+  fiveOfAKind: { chips: 36, mult: 3 },
+  flushHouse: { chips: 42, mult: 4 },
+  flushFive: { chips: 42, mult: 4 },
+};
+
+/**
+ * 某牌型在指定等级的基础值：`base + gain × (level − 1)`。
+ * **1 级必须严格等于 HAND_BASE**，黄金用例锁着这一点。
  */
 export function baseFor(type: HandType, level: number): { chips: number; mult: number } {
   const base = HAND_BASE[type];
-  if (level <= 1) return { chips: base.chips, mult: base.mult };
-  return { chips: base.chips, mult: base.mult };
+  const steps = Math.max(0, (Number.isFinite(level) ? level : 1) - 1);
+  if (steps === 0) return { chips: base.chips, mult: base.mult };
+
+  const gain = HAND_LEVEL_GAIN[type];
+  return { chips: base.chips + gain.chips * steps, mult: base.mult + gain.mult * steps };
 }
 
 export function initialHandLevels(): Record<HandType, number> {

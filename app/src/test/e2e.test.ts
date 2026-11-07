@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { BOSSES } from '../core/blinds';
+import { card } from '../core/cards';
+import { getConsumable } from '../core/consumables';
+import { initialHandLevels } from '../core/hands';
+import { getJoker } from '../core/jokers';
 import { migrateSave } from '../core/persist';
 import { createRun, reducer } from '../core/run';
-import type { RunState } from '../core/types';
+import { scoreHand } from '../core/scoring';
+import { rollShop, sellValue } from '../core/shop';
+import type { RunState, ShopState } from '../core/types';
 
 /**
  * 总体验收：不看单个函数的返回值，只看"一局能不能从头走到尾"。
@@ -111,5 +117,114 @@ describe('E2E：失败路径', () => {
     s = reducer(s, { type: 'toggleCard', cardId: s.hand[0].id });
     s = reducer(s, { type: 'playHand' });
     expect(s.phase).toBe('lost');
+  });
+});
+
+/** 从真实商店 roll 里找出一个带消耗品位的货架，避免测试里手写假商品 */
+function findPlanetShop(seed: string): { shop: ShopState; index: number } {
+  for (let nonce = 0; nonce < 200; nonce++) {
+    const shop = rollShop(seed, nonce);
+    const index = shop.offers.findIndex((o) => o.kind === 'consumable');
+    if (index >= 0) return { shop, index };
+  }
+  throw new Error('200 次 roll 都没有消耗品位，商店权重有问题');
+}
+
+function toFirstShop(): RunState {
+  let s = reducer(createRun('P1FLOW'), { type: 'selectBlind' });
+  s = { ...s, target: 1, money: 40 };
+  s = reducer(s, { type: 'toggleCard', cardId: s.hand[0].id });
+  s = reducer(s, { type: 'playHand' });
+  return reducer(s, { type: 'cashOut' });
+}
+
+describe('E2E：P1 闭环（买铭文 → 使用 → 等级生效 → 存档 → 下一盲注）', () => {
+  it('等级提升跨盲注与存档都保留', () => {
+    let s = toFirstShop();
+    expect(s.phase).toBe('shop');
+
+    const { shop, index } = findPlanetShop('P1FLOW');
+    s = { ...s, shop: { ...shop, rerollCost: 5, rerolls: 0 } };
+
+    const offer = s.shop!.offers[index];
+    const def = getConsumable(offer.defId);
+    expect(def?.target).toBeTruthy();
+    const target = def!.target!;
+    const before = s.handLevels[target];
+    const moneyBefore = s.money;
+
+    s = reducer(s, { type: 'buyConsumable', index });
+    expect(s.consumables).toHaveLength(1);
+    expect(s.money).toBe(moneyBefore - offer.cost);
+
+    s = reducer(s, { type: 'useConsumable', index: 0 });
+    expect(s.handLevels[target]).toBe(before + 1);
+    expect(s.consumables).toHaveLength(0);
+
+    const restored = migrateSave(JSON.parse(JSON.stringify(s))) as RunState;
+    expect(restored.handLevels[target]).toBe(before + 1);
+
+    s = reducer(restored, { type: 'leaveShop' });
+    expect(s.phase).toBe('blindSelect');
+    s = reducer(s, { type: 'selectBlind' });
+    expect(s.handLevels[target]).toBe(before + 1);
+    expect(s.phase).toBe('playing');
+  });
+
+  it('升级后同一手牌的分数确实变高（走真实计分）', () => {
+    const levels = initialHandLevels();
+    const played = [card('s', 14), card('h', 14)];
+    const base = scoreHand({
+      played,
+      jokers: [],
+      handLevels: levels,
+      money: 0,
+      handsLeft: 4,
+      discardsUsed: 0,
+      ante: 1,
+    }).score;
+
+    levels.pair += 1;
+    const up = scoreHand({
+      played,
+      jokers: [],
+      handLevels: levels,
+      money: 0,
+      handsLeft: 4,
+      discardsUsed: 0,
+      ante: 1,
+    }).score;
+
+    expect(up).toBeGreaterThan(base);
+  });
+
+  it('小丑槽满时卖出换位：真实商店里买 → 卖 → 再买', () => {
+    let s = toFirstShop();
+    const jokerIndex = s.shop!.offers.findIndex((o) => o.kind === 'joker');
+    expect(jokerIndex).toBeGreaterThanOrEqual(0);
+
+    // 先塞满 5 个槽
+    s = {
+      ...s,
+      money: 40,
+      jokers: ['jester', 'twin', 'prism', 'bronze', 'stone'].map((defId, i) => ({
+        uid: `j-${i}`,
+        defId,
+      })),
+    };
+
+    const cost = s.shop!.offers[jokerIndex].cost;
+    const moneyBefore = s.money;
+    const blocked = reducer(s, { type: 'buyJoker', index: jokerIndex });
+    expect(blocked).toBe(s);
+
+    s = reducer(s, { type: 'sellJoker', index: 0 });
+    expect(s.jokers).toHaveLength(4);
+
+    s = reducer(s, { type: 'buyJoker', index: jokerIndex });
+    expect(s.jokers).toHaveLength(5);
+    expect(s.jokers[4].defId).toBe(s.shop!.offers[jokerIndex].defId);
+    expect(s.money).toBe(moneyBefore + sellValue(getJoker('jester')!.cost) - cost);
+    expect(countCards(s)).toBe(52);
   });
 });

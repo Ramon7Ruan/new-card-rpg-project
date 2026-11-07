@@ -72,8 +72,18 @@ export interface JokerInstance {
   defId: string;
 }
 
+/** 消耗品实例（铭文等）。用掉即从槽位移除。 */
+export interface ConsumableInstance {
+  uid: string;
+  defId: string;
+}
+
+export type ShopKind = 'joker' | 'consumable';
+
 export interface ShopOffer {
   defId: string;
+  /** 商品类型，决定买进哪个槽位 */
+  kind: ShopKind;
   cost: number;
   sold: boolean;
 }
@@ -100,6 +110,8 @@ export interface RunState {
   hand: Card[];
 
   jokers: JokerInstance[];
+  /** 消耗品槽，上限 MAX_CONSUMABLES */
+  consumables: ConsumableInstance[];
   handLevels: Record<HandType, number>;
 
   /** 当前盲注的 Boss（非 Boss 盲注为 null） */

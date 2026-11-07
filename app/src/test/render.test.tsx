@@ -123,3 +123,84 @@ describe('渲染冒烟', () => {
     expect(html).toContain('继续下一盲注');
   });
 });
+
+// ── P1 界面：消耗品槽、等级、卖出区 ─────────────────────────────
+
+function shopState(over: Partial<RunState> = {}): RunState {
+  return {
+    ...createRun('SHOPSMOKE'),
+    phase: 'shop',
+    money: 30,
+    shop: {
+      offers: [
+        { defId: 'inscribe-pair', kind: 'consumable', cost: 3, sold: false },
+        { defId: 'fission', kind: 'joker', cost: 6, sold: false },
+      ],
+      rerollCost: 5,
+      rerolls: 0,
+    },
+    ...over,
+  };
+}
+
+describe('消耗品与卖出界面', () => {
+  it('持有铭文时牌桌上出现消耗品槽与使用按钮', () => {
+    let s = reducer(createRun('CSMOKE'), { type: 'selectBlind' });
+    s = { ...s, consumables: [{ uid: 'c0', defId: 'inscribe-flush' }] };
+    const html = renderToString(<App initialState={s} />);
+    expect(html).toContain('同花铭文');
+    expect(html).toContain('consumable-row');
+    expect(html).toContain('使用');
+  });
+
+  it('没有铭文时不占位（牌桌保持紧凑）', () => {
+    const s = reducer(createRun('CSMOKE'), { type: 'selectBlind' });
+    const html = renderToString(<App initialState={s} />);
+    expect(html).not.toContain('consumable-row');
+  });
+
+  it('选牌后显示牌型等级（只在 >1 时出现）', () => {
+    let s = reducer(createRun('LVSMOKE'), { type: 'selectBlind' });
+    s = reducer(s, { type: 'toggleCard', cardId: s.hand[0].id });
+    expect(renderToString(<App initialState={s} />)).not.toContain('Lv.');
+
+    const up = { ...s, handLevels: { ...s.handLevels, highCard: 3 } };
+    const html = renderToString(<App initialState={up} />);
+    expect(html).toContain('Lv.3');
+  });
+
+  it('商店页同时有消耗品位与小丑位，并写明类型', () => {
+    const html = renderToString(<App initialState={shopState()} />);
+    expect(html).toContain('对子铭文');
+    expect(html).toContain('裂变');
+    expect(html).toContain('kind-tag');
+    expect(html).toContain('铭文 0/2');
+  });
+
+  it('商店页有卖出区，价格写在实际按钮上', () => {
+    const s = shopState({
+      jokers: [{ uid: 'j0', defId: 'fission' }],
+      consumables: [{ uid: 'c0', defId: 'inscribe-pair' }],
+    });
+    const html = renderToString(<App initialState={s} />);
+    expect(html).toContain('owned');
+    expect(html).toContain('卖出 $3'); // fission 原价 6 → 3
+    expect(html).toContain('卖出 $1'); // 铭文原价 3 → 1
+  });
+
+  it('空槽时商店显示「还没有任何牌」占位而不是空白', () => {
+    const html = renderToString(<App initialState={shopState()} />);
+    expect(html).toContain('还没有任何牌');
+  });
+
+  it('小丑槽满时购买按钮禁用并提示槽位已满', () => {
+    const s = shopState({
+      jokers: ['jester', 'twin', 'prism', 'bronze', 'stone'].map((defId, i) => ({
+        uid: `j${i}`,
+        defId,
+      })),
+    });
+    const html = renderToString(<App initialState={s} />);
+    expect(html).toContain('槽位已满');
+  });
+});

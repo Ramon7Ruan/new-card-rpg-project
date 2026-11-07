@@ -1,11 +1,12 @@
 import { MAX_ANTE, resolveBoss, rewardFor, targetFor } from './blinds';
 import { createDeck, sortHand } from './cards';
+import { getConsumable, MAX_CONSUMABLES } from './consumables';
 
 import { initialHandLevels } from './hands';
 import { getJoker, MAX_JOKERS } from './jokers';
 import { makeRng, randomSeed, shuffle } from './rng';
 import { scoreHand } from './scoring';
-import { rollShop } from './shop';
+import { rollShop, sellValue } from './shop';
 import type { BlindRule, Card, RunState } from './types';
 
 export const HAND_SIZE = 8;
@@ -13,7 +14,14 @@ export const HANDS_PER_ROUND = 4;
 export const DISCARDS_PER_ROUND = 3;
 export const INTEREST_CAP = 5;
 /** 存档结构版本。改 RunState 字段时必须 +1，并在 persist.ts 补迁移。 */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
+
+/** 生成在数组内唯一的 uid（卖出后再买入也不会撞车） */
+function nextUid(prefix: string, used: { uid: string }[]): string {
+  let n = 0;
+  while (used.some((u) => u.uid === `${prefix}-${n}`)) n += 1;
+  return `${prefix}-${n}`;
+}
 
 export function createRun(seed: string = randomSeed()): RunState {
   const deck = shuffle(createDeck(), makeRng(seed, 'deck'));
@@ -27,6 +35,7 @@ export function createRun(seed: string = randomSeed()): RunState {
     discardPile: [],
     hand: [],
     jokers: [],
+    consumables: [],
     handLevels: initialHandLevels(),
     bossId: null,
     bossRule: null,
@@ -78,6 +87,10 @@ export type Action =
   | { type: 'discard' }
   | { type: 'cashOut' }
   | { type: 'buyJoker'; index: number }
+  | { type: 'buyConsumable'; index: number }
+  | { type: 'useConsumable'; index: number }
+  | { type: 'sellJoker'; index: number }
+  | { type: 'sellConsumable'; index: number }
   | { type: 'reroll' }
   | { type: 'leaveShop' }
   | { type: 'loadState'; state: RunState };
@@ -224,7 +237,7 @@ export function reducer(state: RunState, action: Action): RunState {
     case 'buyJoker': {
       if (state.phase !== 'shop' || !state.shop) return state;
       const offer = state.shop.offers[action.index];
-      if (!offer || offer.sold) return state;
+      if (!offer || offer.sold || offer.kind !== 'joker') return state;
       if (state.money < offer.cost) return state;
       if (state.jokers.length >= MAX_JOKERS) return state;
 
@@ -232,14 +245,75 @@ export function reducer(state: RunState, action: Action): RunState {
       return {
         ...state,
         money: state.money - offer.cost,
-        jokers: [
-          ...state.jokers,
-          {
-            uid: `${offer.defId}-a${state.ante}-b${state.blindIndex}-n${state.jokers.length}`,
-            defId: offer.defId,
-          },
+        jokers: [...state.jokers, { uid: nextUid(offer.defId, state.jokers), defId: offer.defId }],
+        shop: { ...state.shop, offers },
+      };
+    }
+
+    case 'buyConsumable': {
+      if (state.phase !== 'shop' || !state.shop) return state;
+      const offer = state.shop.offers[action.index];
+      if (!offer || offer.sold || offer.kind !== 'consumable') return state;
+      if (state.money < offer.cost) return state;
+      if (state.consumables.length >= MAX_CONSUMABLES) return state;
+
+      const offers = state.shop.offers.map((o, i) => (i === action.index ? { ...o, sold: true } : o));
+      return {
+        ...state,
+        money: state.money - offer.cost,
+        consumables: [
+          ...state.consumables,
+          { uid: nextUid(offer.defId, state.consumables), defId: offer.defId },
         ],
         shop: { ...state.shop, offers },
+      };
+    }
+
+    /**
+     * 使用消耗品：只把目标牌型升 1 级，然后把这张牌移出槽位。
+     * 允许在牌桌与商店使用（买完立刻用是正常操作），盲注选择页不可用。
+     */
+    case 'useConsumable': {
+      if (state.phase !== 'playing' && state.phase !== 'shop') return state;
+      const inst = state.consumables[action.index];
+      if (!inst) return state;
+      const def = getConsumable(inst.defId);
+      if (!def?.target) return state;
+
+      const type = def.target;
+      return {
+        ...state,
+        handLevels: { ...state.handLevels, [type]: (state.handLevels[type] ?? 1) + 1 },
+        consumables: state.consumables.filter((_, i) => i !== action.index),
+      };
+    }
+
+    /** 卖出小丑：只在商店页。价格 = 原价 × SELL_RATE（见 shop.ts） */
+    case 'sellJoker': {
+      if (state.phase !== 'shop') return state;
+      const inst = state.jokers[action.index];
+      if (!inst) return state;
+      const def = getJoker(inst.defId);
+      if (!def) return state;
+
+      return {
+        ...state,
+        money: state.money + sellValue(def.cost),
+        jokers: state.jokers.filter((_, i) => i !== action.index),
+      };
+    }
+
+    case 'sellConsumable': {
+      if (state.phase !== 'shop') return state;
+      const inst = state.consumables[action.index];
+      if (!inst) return state;
+      const def = getConsumable(inst.defId);
+      if (!def) return state;
+
+      return {
+        ...state,
+        money: state.money + sellValue(def.cost),
+        consumables: state.consumables.filter((_, i) => i !== action.index),
       };
     }
 
