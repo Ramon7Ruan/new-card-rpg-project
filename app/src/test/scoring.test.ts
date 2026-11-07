@@ -147,3 +147,77 @@ describe('计分黄金用例', () => {
     expect(r.events[0].multDelta).toBe(2);
   });
 });
+
+/**
+ * 黄金用例 G16–G25：P2 新增的增强 / 蜡封组合。
+ * 与 G1–G15 同级：数字是契约，重构不能动。
+ */
+describe('增强黄金用例', () => {
+  it('G16 一对 A + 两张附加 → 92 × 2 = 184', () => {
+    const r = run([card('s', 14, 'bonus'), card('h', 14, 'bonus')]);
+    expect(r.chips).toBe(92); // 10 + (11+30) × 2
+    expect(r.score).toBe(184);
+  });
+
+  it('G17 一对 A，一张倍率 → 32 × 6 = 192', () => {
+    const r = run([card('s', 14, 'mult'), card('h', 14)]);
+    expect(r.mult).toBe(6);
+    expect(r.score).toBe(192);
+  });
+
+  it('G18 一对 A，一张裂隙 → 32 × 4 = 128', () => {
+    const r = run([card('s', 14, 'glass'), card('h', 14)]);
+    expect(r.score).toBe(128);
+  });
+
+  it('G19 一对 A + 留手铸铁 → 32 × 3 = 96', () => {
+    const r = run([card('s', 14), card('h', 14)], [], { held: [card('s', 13, 'steel')] });
+    expect(r.mult).toBe(3);
+    expect(r.score).toBe(96);
+  });
+
+  it('G20 一对 A，♠A 附加 + 朱砂 → 103 × 2 = 206', () => {
+    const r = run([card('s', 14, 'bonus', 'red'), card('h', 14)]);
+    expect(r.chips).toBe(103); // 10 + 41 + 41 + 11
+    expect(r.score).toBe(206);
+  });
+
+  it('G21 一对 A，♠A 金砂 → 分数不变，另得 $3', () => {
+    const r = run([card('s', 14, undefined, 'gold'), card('h', 14)]);
+    expect(r.score).toBe(64);
+    expect(r.money).toBe(3);
+  });
+
+  it('G22 四张红心 + 幻形黑桃 K → 同花 60 × 4 = 240', () => {
+    const r = run([
+      card('h', 2),
+      card('h', 3),
+      card('h', 4),
+      card('h', 6),
+      card('s', 13, 'wild'),
+    ]);
+    expect(r.handType).toBe('flush');
+    expect(r.chips).toBe(60); // 35 + 2+3+4+6 + 10
+    expect(r.score).toBe(240);
+  });
+
+  it('G23 一对 A，裂隙 + 棱镜(×3) → 32 × 12 = 384', () => {
+    const r = run([card('s', 14, 'glass'), card('h', 14)], ['prism']);
+    expect(r.mult).toBe(12);
+    expect(r.score).toBe(384);
+  });
+
+  it('G24 一对 A + 两张附加 + 小丑(+4) → 92 × 6 = 552', () => {
+    const r = run([card('s', 14, 'bonus'), card('h', 14, 'bonus')], ['jester']);
+    expect(r.chips).toBe(92);
+    expect(r.mult).toBe(6);
+    expect(r.score).toBe(552);
+  });
+
+  it('G25 三条 K（两张附加）→ 120 × 3 = 360', () => {
+    const r = run([card('s', 13, 'bonus'), card('h', 13, 'bonus'), card('d', 13)]);
+    expect(r.handType).toBe('threeOfAKind');
+    expect(r.chips).toBe(120); // 30 + 30 + 60
+    expect(r.score).toBe(360);
+  });
+});

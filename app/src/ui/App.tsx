@@ -19,6 +19,8 @@ import { sellValue } from '../core/shop';
 import type { Card, HandType, RunState, ScoreResult } from '../core/types';
 import { CardView } from './CardView';
 import { ConsumableView } from './ConsumableView';
+import { DeckPanel } from './DeckPanel';
+import { HandLevelPanel } from './HandLevelPanel';
 import { JokerView } from './JokerView';
 
 interface AnimState {
@@ -33,6 +35,11 @@ const HOLD_MS = 700;
 export default function App({ initialState }: { initialState?: RunState } = {}) {
   const [state, dispatch] = useReducer(reducer, undefined, () => initialState ?? loadRun() ?? createRun());
   const [anim, setAnim] = useState<AnimState | null>(null);
+  const [showLevels, setShowLevels] = useState(false);
+  const [deckOpen, setDeckOpen] = useState(false);
+  /** 正在等目标牌的符咒在消耗品槽里的下标；null = 没有待选目标的符咒 */
+  const [pendingCharm, setPendingCharm] = useState<number | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
 
   useEffect(() => {
     saveRun(state);
@@ -58,6 +65,11 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
 
   const busy = anim !== null;
   const selectedCards = state.hand.filter((c) => state.selected.includes(c.id));
+  /** 整副牌：手牌 + 牌堆 + 弃牌堆。牌堆面板与符咒选目标都用这一份 */
+  const allCards = useMemo(
+    () => [...state.hand, ...state.deck, ...state.discardPile],
+    [state.hand, state.deck, state.discardPile],
+  );
 
   /**
    * 选牌即算分：与出牌走同一个 scoreHand（同一份 Boss 规则），
@@ -69,6 +81,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
     if (played.length === 0) return null;
     return scoreHand({
       played,
+      held: state.hand.filter((c) => !state.selected.includes(c.id)),
       jokers: state.jokers,
       handLevels: state.handLevels,
       money: state.money,
@@ -91,6 +104,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
 
     const result = scoreHand({
       played: selectedCards,
+      held: state.hand.filter((c) => !state.selected.includes(c.id)),
       jokers: state.jokers,
       handLevels: state.handLevels,
       money: state.money,
@@ -105,14 +119,51 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
   function handleNewRun() {
     clearRun();
     setAnim(null);
+    setPendingCharm(null);
+    setPicked([]);
+    setDeckOpen(false);
     dispatch({ type: 'newRun' });
   }
+
+  /**
+   * 使用消耗品：铭文（星球位）直接升级牌型；符咒需要先选目标牌。
+   * 需要目标的符咒会打开牌堆面板进入选择态，避免手牌为空时（商店页）用不了。
+   */
+  function startCharm(index: number) {
+    const inst = state.consumables[index];
+    const def = inst ? getConsumable(inst.defId) : undefined;
+    if (!def) return;
+
+    const need = def.needsTarget ?? 0;
+    if (need === 0) {
+      dispatch({ type: 'useConsumable', index });
+      return;
+    }
+    setPicked([]);
+    setPendingCharm(index);
+  }
+
+  function confirmCharm() {
+    if (pendingCharm === null) return;
+    dispatch({ type: 'useConsumable', index: pendingCharm, targetIds: picked });
+    setPendingCharm(null);
+    setPicked([]);
+  }
+
+  function cancelCharm() {
+    setPendingCharm(null);
+    setPicked([]);
+  }
+
+  const pendingDef =
+    pendingCharm !== null ? getConsumable(state.consumables[pendingCharm]?.defId ?? '') : undefined;
 
   const ev = anim ? anim.result.events[Math.min(anim.step, anim.result.events.length - 1)] : null;
 
   let chips = 0;
   let mult = 0;
   let total = 0;
+  let moneyGain = 0;
   let handLabel = '';
   let handType: HandType | null = null;
   let stepLabel = '';
@@ -122,6 +173,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
     // 播放中：以 trace 的当前事件为准
     chips = ev.chipsAfter;
     mult = ev.multAfter;
+    moneyGain = anim.result.money;
     handLabel = HAND_LABEL[anim.result.handType];
     handType = anim.result.handType;
     stepLabel = ev.label;
@@ -132,6 +184,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
     chips = preview.chips;
     mult = preview.mult;
     total = preview.score;
+    moneyGain = preview.money;
     handLabel = HAND_LABEL[preview.handType];
     handType = preview.handType;
     stepLabel = '预计本次得分';
@@ -179,9 +232,17 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
           <span className="label">资金</span>
           <span className="money">${state.money}</span>
         </div>
-        <button className="ghost-btn" onClick={handleNewRun}>
-          重开
-        </button>
+        <div className="topbar-actions">
+          <button className="ghost-btn" onClick={() => setDeckOpen(true)}>
+            {`牌堆 ${allCards.length}`}
+          </button>
+          <button className="ghost-btn" onClick={() => setShowLevels(true)}>
+            牌型等级
+          </button>
+          <button className="ghost-btn" onClick={handleNewRun}>
+            重开
+          </button>
+        </div>
       </header>
 
       {state.consumables.length > 0 && (
@@ -191,7 +252,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
             <ConsumableView
               key={inst.uid}
               def={getConsumable(inst.defId)}
-              onUse={() => dispatch({ type: 'useConsumable', index: i })}
+              onUse={() => startCharm(i)}
               disabled={!canUseConsumable}
             />
           ))}
@@ -313,6 +374,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
                     ? `= ${total}`
                     : ''}
             </div>
+            {moneyGain > 0 && <div className="score-money">{`另得 +$${moneyGain}`}</div>}
           </div>
         </div>
       )}
@@ -364,7 +426,14 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
       )}
 
       {state.phase === 'cashOut' && <CashOutPanel state={state} onConfirm={() => dispatch({ type: 'cashOut' })} />}
-      {state.phase === 'shop' && state.shop && <ShopPanel state={state} dispatch={dispatch} />}
+      {state.phase === 'shop' && state.shop && (
+        <ShopPanel
+          state={state}
+          dispatch={dispatch}
+          onShowLevels={() => setShowLevels(true)}
+          onUseConsumable={startCharm}
+        />
+      )}
       {(state.phase === 'won' || state.phase === 'lost') && (
         <div className="overlay">
           <div className="panel">
@@ -397,6 +466,33 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
       <p className="site-note">
         非官方粉丝项目 · 与任何原作开发商、发行商无关联 · 非商业用途 · 不含原作素材
       </p>
+
+      {showLevels && (
+        <HandLevelPanel
+          levels={state.handLevels}
+          current={handType}
+          onClose={() => setShowLevels(false)}
+        />
+      )}
+
+      {(deckOpen || pendingCharm !== null) && (
+        <DeckPanel
+          cards={allCards}
+          select={
+            pendingCharm !== null
+              ? {
+                  count: pendingDef?.needsTarget ?? 1,
+                  picked,
+                  onToggle: (id) =>
+                    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id])),
+                  onConfirm: confirmCharm,
+                  onCancel: cancelCharm,
+                }
+              : undefined
+          }
+          onClose={() => setDeckOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -405,11 +501,13 @@ function CashOutPanel({ state, onConfirm }: { state: RunState; onConfirm: () => 
   const reward = rewardFor(state.blindIndex);
   const bonus = state.handsLeft;
   const interest = Math.min(Math.floor(state.money / 5), 5);
+  const goldCards = state.hand.filter((c) => c.enhancement === 'gold').length;
+  const goldBonus = goldCards * 3;
   const jokerMoney = state.jokers.reduce((sum, inst) => {
     const def = getJoker(inst.defId);
     return sum + (def?.onRoundEnd ? def.onRoundEnd({ money: state.money, ante: state.ante }) : 0);
   }, 0);
-  const total = state.money + reward + bonus + interest + jokerMoney;
+  const total = state.money + reward + bonus + interest + jokerMoney + goldBonus;
 
   return (
     <div className="overlay">
@@ -435,6 +533,12 @@ function CashOutPanel({ state, onConfirm }: { state: RunState; onConfirm: () => 
               <b>+${jokerMoney}</b>
             </div>
           )}
+          {goldBonus > 0 && (
+            <div className="row">
+              <span>{`鎏金留手 ×${goldCards}（每张 $3）`}</span>
+              <b>+${goldBonus}</b>
+            </div>
+          )}
           <div className="row total">
             <span>现有资金</span>
             <b>${total}</b>
@@ -451,7 +555,17 @@ function CashOutPanel({ state, onConfirm }: { state: RunState; onConfirm: () => 
   );
 }
 
-function ShopPanel({ state, dispatch }: { state: RunState; dispatch: Dispatch<Action> }) {
+function ShopPanel({
+  state,
+  dispatch,
+  onShowLevels,
+  onUseConsumable,
+}: {
+  state: RunState;
+  dispatch: Dispatch<Action>;
+  onShowLevels: () => void;
+  onUseConsumable: (index: number) => void;
+}) {
   const shop = state.shop;
   if (!shop) return null;
 
@@ -536,7 +650,7 @@ function ShopPanel({ state, dispatch }: { state: RunState; dispatch: Dispatch<Ac
                   <div key={inst.uid} className="owned-item">
                     <span className="owned-name">{def.name}</span>
                     <span className="owned-desc">{def.desc}</span>
-                    <button className="btn" onClick={() => dispatch({ type: 'useConsumable', index: i })}>
+                    <button className="btn" onClick={() => onUseConsumable(i)}>
                       使用
                     </button>
                     <button
@@ -561,7 +675,11 @@ function ShopPanel({ state, dispatch }: { state: RunState; dispatch: Dispatch<Ac
             onClick={() => dispatch({ type: 'reroll' })}
           >
             {`重摇 $${shop.rerollCost}`}
-          </button>          <div className="spacer" />
+          </button>
+          <button className="ghost-btn" onClick={onShowLevels}>
+            牌型等级
+          </button>
+          <div className="spacer" />
           <button className="btn btn-primary" onClick={() => dispatch({ type: 'leaveShop' })}>
             继续下一盲注
           </button>

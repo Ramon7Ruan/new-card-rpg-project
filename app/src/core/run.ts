@@ -1,5 +1,6 @@
 import { MAX_ANTE, resolveBoss, rewardFor, targetFor } from './blinds';
 import { createDeck, sortHand } from './cards';
+import { allRunCards } from './charms';
 import { getConsumable, MAX_CONSUMABLES } from './consumables';
 
 import { initialHandLevels } from './hands';
@@ -14,7 +15,7 @@ export const HANDS_PER_ROUND = 4;
 export const DISCARDS_PER_ROUND = 3;
 export const INTEREST_CAP = 5;
 /** 存档结构版本。改 RunState 字段时必须 +1，并在 persist.ts 补迁移。 */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 /** 生成在数组内唯一的 uid（卖出后再买入也不会撞车） */
 function nextUid(prefix: string, used: { uid: string }[]): string {
@@ -88,7 +89,7 @@ export type Action =
   | { type: 'cashOut' }
   | { type: 'buyJoker'; index: number }
   | { type: 'buyConsumable'; index: number }
-  | { type: 'useConsumable'; index: number }
+  | { type: 'useConsumable'; index: number; targetIds?: string[] }
   | { type: 'sellJoker'; index: number }
   | { type: 'sellConsumable'; index: number }
   | { type: 'reroll' }
@@ -163,8 +164,11 @@ export function reducer(state: RunState, action: Action): RunState {
       const played = state.hand.filter((c) => state.selected.includes(c.id));
       if (played.length === 0) return state;
 
+      const held = state.hand.filter((c) => !state.selected.includes(c.id));
+
       const result = scoreHand({
         played,
+        held,
         jokers: state.jokers,
         handLevels: state.handLevels,
         money: state.money,
@@ -178,14 +182,24 @@ export function reducer(state: RunState, action: Action): RunState {
       const roundScore = state.roundScore + result.score;
       const handsLeft = state.handsLeft - 1;
 
+      // 裂隙：被计分的裂隙牌在本次出牌后永久碎裂（确定性规则，不掷骰）。
+      // 碎裂的牌不进弃牌堆——它就是没了，牌堆会真的变薄。
+      const shattered = new Set(
+        played
+          .filter((c) => c.enhancement === 'glass' && result.scoringCardIds.includes(c.id))
+          .map((c) => c.id),
+      );
+      const survivors = played.filter((c) => !shattered.has(c.id));
+
       let phase: RunState['phase'] = 'playing';
       if (roundScore >= state.target) phase = 'cashOut';
       else if (handsLeft === 0) phase = 'lost';
 
       const next: RunState = {
         ...state,
+        money: state.money + result.money,
         hand: remaining,
-        discardPile: [...state.discardPile, ...played],
+        discardPile: [...state.discardPile, ...survivors],
         roundScore,
         handsLeft,
         lastScore: result,
@@ -220,7 +234,10 @@ export function reducer(state: RunState, action: Action): RunState {
       if (state.phase !== 'cashOut') return state;
 
       const interest = Math.min(Math.floor(state.money / 5), INTEREST_CAP);
-      let money = state.money + rewardFor(state.blindIndex) + state.handsLeft + interest;
+      // 鎏金：回合结束时还留在手里的牌，每张 +$3
+      const goldBonus = state.hand.filter((c) => c.enhancement === 'gold').length * 3;
+      let money =
+        state.money + rewardFor(state.blindIndex) + state.handsLeft + interest + goldBonus;
 
       for (const inst of state.jokers) {
         const def = getJoker(inst.defId);
@@ -270,7 +287,9 @@ export function reducer(state: RunState, action: Action): RunState {
     }
 
     /**
-     * 使用消耗品：只把目标牌型升 1 级，然后把这张牌移出槽位。
+     * 使用消耗品。
+     * - 铭文：把目标牌型升 1 级（不需要选牌）
+     * - 符咒：按 needsTarget 校验目标牌数量后再应用效果
      * 允许在牌桌与商店使用（买完立刻用是正常操作），盲注选择页不可用。
      */
     case 'useConsumable': {
@@ -278,14 +297,37 @@ export function reducer(state: RunState, action: Action): RunState {
       const inst = state.consumables[action.index];
       if (!inst) return state;
       const def = getConsumable(inst.defId);
-      if (!def?.target) return state;
+      if (!def) return state;
 
-      const type = def.target;
-      return {
-        ...state,
-        handLevels: { ...state.handLevels, [type]: (state.handLevels[type] ?? 1) + 1 },
-        consumables: state.consumables.filter((_, i) => i !== action.index),
-      };
+      const without = state.consumables.filter((_, i) => i !== action.index);
+
+      if (def.kind === 'planet') {
+        if (!def.target) return state;
+        const type = def.target;
+        return {
+          ...state,
+          handLevels: { ...state.handLevels, [type]: (state.handLevels[type] ?? 1) + 1 },
+          consumables: without,
+        };
+      }
+
+      const need = def.needsTarget ?? 0;
+      const ids = action.targetIds ?? [];
+      // 数量必须刚好，且不能同一张牌选两次
+      if (ids.length !== need) return state;
+      if (new Set(ids).size !== ids.length) return state;
+
+      const pool = new Map(allRunCards(state).map((c) => [c.id, c]));
+      const targets: Card[] = [];
+      for (const id of ids) {
+        const found = pool.get(id);
+        if (!found) return state;
+        targets.push(found);
+      }
+
+      const patch = def.apply?.({ state, targets });
+      if (!patch) return state;
+      return { ...state, ...patch, consumables: without };
     }
 
     /** 卖出小丑：只在商店页。价格 = 原价 × SELL_RATE（见 shop.ts） */

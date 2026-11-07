@@ -1,9 +1,51 @@
 import { getConsumable, MAX_CONSUMABLES } from './consumables';
 import { initialHandLevels } from './hands';
 import { HAND_SIZE, SAVE_VERSION } from './run';
-import type { BlindRule, ConsumableInstance, RunState, ShopKind, ShopOffer, ShopState } from './types';
+import type {
+  BlindRule,
+  Card,
+  ConsumableInstance,
+  Enhancement,
+  RunState,
+  Seal,
+  ShopKind,
+  ShopOffer,
+  ShopState,
+  Suit,
+} from './types';
 
 const KEY = 'new-card-rpg-project-run-v1';
+
+const SUITS = new Set<string>(['spade', 'heart', 'diamond', 'club']);
+const ENHANCEMENTS = new Set<string>(['bonus', 'mult', 'glass', 'steel', 'gold', 'wild']);
+const SEALS = new Set<string>(['red', 'gold']);
+
+/**
+ * 单张牌的迁移：v3 及更早的牌没有 enhancement / seal，缺省即普通牌。
+ * 非法字段一律丢弃而不是保留——未知增强名会让计分拿到 undefined 分支。
+ */
+export function sanitizeCard(raw: unknown): Card | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const c = raw as Partial<Card>;
+  if (typeof c.id !== 'string' || c.id === '') return null;
+  if (typeof c.suit !== 'string' || !SUITS.has(c.suit)) return null;
+  if (typeof c.rank !== 'number' || !Number.isFinite(c.rank)) return null;
+  if (c.rank < 2 || c.rank > 14) return null;
+
+  const out: Card = { id: c.id, suit: c.suit as Suit, rank: Math.floor(c.rank) };
+  if (typeof c.enhancement === 'string' && ENHANCEMENTS.has(c.enhancement)) {
+    out.enhancement = c.enhancement as Enhancement;
+  }
+  if (typeof c.seal === 'string' && SEALS.has(c.seal)) {
+    out.seal = c.seal as Seal;
+  }
+  return out;
+}
+
+function migrateCards(raw: unknown): Card[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(sanitizeCard).filter((c): c is Card => c !== null);
+}
 
 /** 旧版存档只有小丑商品，缺 kind 的一律按 joker 补 */
 function migrateShop(raw: unknown): ShopState | null {
@@ -74,6 +116,10 @@ export function migrateSave(raw: unknown): RunState | null {
     handLevels: migrateLevels(s.handLevels),
     consumables: migrateConsumables(s.consumables),
     shop: migrateShop(s.shop),
+    // v3 → v4：牌多出 enhancement / seal 两个可选字段，旧的普通牌读入后仍是普通牌
+    deck: migrateCards(s.deck),
+    hand: migrateCards(s.hand),
+    discardPile: migrateCards(s.discardPile),
     lastScore: state.lastScore ?? null,
     selected: Array.isArray(s.selected) ? (s.selected as string[]) : [],
   };

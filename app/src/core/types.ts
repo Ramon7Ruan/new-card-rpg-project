@@ -5,11 +5,31 @@ export type Suit = 'spade' | 'heart' | 'diamond' | 'club';
 /** 2..10, 11=J, 12=Q, 13=K, 14=A */
 export type Rank = number;
 
+/**
+ * 卡牌增强（P2）。每条都走独立加成通道，见 scoring.ts 的结算顺序：
+ * - bonus  附加：+30 筹码
+ * - mult   倍率：+4 倍率
+ * - glass  裂隙：×2 倍率，但计分后该牌永久碎裂（确定性，不掷骰）
+ * - steel  铸铁：留在手牌中未打出时 ×1.5 倍率
+ * - gold   鎏金：回合结束若还留在手牌，+$3
+ * - wild   幻形：同花判定时视为任意花色
+ */
+export type Enhancement = 'bonus' | 'mult' | 'glass' | 'steel' | 'gold' | 'wild';
+
+/**
+ * 蜡封（P2）。一张牌可以同时有增强与蜡封：
+ * - red   朱砂：该牌在计分时结算两次（重触发）
+ * - gold  金砂：该牌计分时 +$3
+ */
+export type Seal = 'red' | 'gold';
+
 export interface Card {
-  /** 唯一 id，形如 "spade-14" */
+  /** 唯一 id，形如 "spade-14"。**身份不随花色/点数改写**，复制牌用 "#copyN" 后缀 */
   id: string;
   suit: Suit;
   rank: Rank;
+  enhancement?: Enhancement;
+  seal?: Seal;
 }
 
 export type HandType =
@@ -42,6 +62,8 @@ export interface ScoreResult {
   chips: number;
   mult: number;
   score: number;
+  /** 本次计分额外获得的金钱（金砂蜡封），由 playHand 计入资金 */
+  money: number;
   events: ScoreEvent[];
   scoringCardIds: string[];
   /** 被 Boss 规则压制、不计分的牌（仍参与牌型识别） */

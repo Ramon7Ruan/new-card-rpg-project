@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { card } from '../core/cards';
 import {
-  CONSUMABLES,
   CONSUMABLE_COST,
   getConsumable,
   MAX_CONSUMABLES,
+  PLANETS,
 } from '../core/consumables';
 import {
   ALL_HAND_TYPES,
@@ -60,7 +60,6 @@ describe('S1 存档版本 3：旧存档迁移', () => {
     const m = migrateSave(legacy());
     expect(m).not.toBeNull();
     expect(m?.version).toBe(SAVE_VERSION);
-    expect(SAVE_VERSION).toBe(3);
     expect(m?.consumables).toEqual([]);
     expect(Object.values(m?.handLevels ?? {})).toEqual(Array(12).fill(1));
   });
@@ -154,15 +153,15 @@ describe('S2 baseFor：1 级不变，逐级叠加', () => {
 
 describe('S3 铭文数据表', () => {
   it('12 张，id 与目标牌型都不重复，且覆盖全部牌型', () => {
-    expect(CONSUMABLES).toHaveLength(12);
-    expect(new Set(CONSUMABLES.map((c) => c.id)).size).toBe(12);
-    const targets = CONSUMABLES.map((c) => c.target);
+    expect(PLANETS).toHaveLength(12);
+    expect(new Set(PLANETS.map((c) => c.id)).size).toBe(12);
+    const targets = PLANETS.map((c) => c.target);
     expect(new Set(targets).size).toBe(12);
     expect(new Set(targets)).toEqual(new Set(ALL_HAND_TYPES));
   });
 
   it('每张都有正价格，描述里写明加成数值', () => {
-    for (const c of CONSUMABLES) {
+    for (const c of PLANETS) {
       expect(c.cost).toBe(CONSUMABLE_COST);
       expect(c.cost).toBeGreaterThan(0);
       const gain = HAND_LEVEL_GAIN[c.target as HandType];

@@ -1,4 +1,4 @@
-import { cardChips, cardLabel } from './cards';
+import { cardChips, cardLabel, ENHANCEMENT_LABEL } from './cards';
 import { evaluateHand } from './handEval';
 import { baseFor, HAND_LABEL } from './hands';
 import { getJoker, type JokerCtx } from './jokers';
@@ -6,6 +6,8 @@ import type { BlindRule, Card, HandType, JokerInstance, ScoreEvent, ScoreResult 
 
 export interface ScoreInput {
   played: Card[];
+  /** 留在手牌、这次不打的牌。铸铁（steel）靠它生效。 */
+  held?: Card[];
   jokers: JokerInstance[];
   /** 每种牌型各自的等级，M0 恒为 1 */
   handLevels: Record<HandType, number>;
@@ -25,9 +27,55 @@ function isDebuffed(card: Card, rule: BlindRule | null): boolean {
   return false;
 }
 
+const round2 = (x: number) => Math.round(x * 100) / 100;
+
+/**
+ * 单张牌的「一次」结算：先牌面筹码，再增强，最后蜡封的金钱效果。
+ * 朱砂蜡封会把这一整套再跑一遍，所以必须抽成函数，不能内联两处。
+ *
+ * 增强里只有三种在「这张牌自己计分」时生效：
+ *   bonus → +30 筹码；mult → +4 倍率；glass → ×2 倍率。
+ *   steel / gold 是「留手」效果，wild 只影响牌型识别，都不进这里。
+ */
+function scoreCardOnce(
+  card: Card,
+  chips: number,
+  mult: number,
+): { chips: number; mult: number; money: number } {
+  let nextChips = chips + cardChips(card);
+  let nextMult = mult;
+  let money = 0;
+
+  switch (card.enhancement) {
+    case 'bonus':
+      nextChips += 30;
+      break;
+    case 'mult':
+      nextMult += 4;
+      break;
+    case 'glass':
+      nextMult *= 2;
+      break;
+    default:
+      break;
+  }
+
+  if (card.seal === 'gold') money += 3;
+
+  return { chips: nextChips, mult: nextMult, money };
+}
+
+function cardEventLabel(card: Card): string {
+  return card.enhancement ? `${cardLabel(card)} · ${ENHANCEMENT_LABEL[card.enhancement]}` : cardLabel(card);
+}
+
 /**
  * 计分管线。顺序是硬约定，不可调整：
- *   牌型基础值 → 逐张计分牌（左→右）→ 小丑槽位（左→右，+筹码→+倍率→×倍率）→ 筹码 × 倍率
+ *   牌型基础值
+ *   → 逐张计分牌（左→右）：牌面筹码 → 增强 → 金砂蜡封；有朱砂则整套再来一遍
+ *   → 留手牌里的铸铁（×1.5 倍率，逐张相乘）
+ *   → 小丑槽位（左→右，+筹码→+倍率→×倍率）
+ *   → 筹码 × 倍率
  *
  * 返回的 events 就是动画层的唯一数据源。动画层不允许重算。
  */
@@ -37,6 +85,7 @@ export function scoreHand(input: ScoreInput): ScoreResult {
 
   let chips = base.chips;
   let mult = base.mult;
+  let money = 0;
 
   const events: ScoreEvent[] = [
     {
@@ -57,13 +106,54 @@ export function scoreHand(input: ScoreInput): ScoreResult {
     .map((c) => c.id);
 
   for (const card of scoringCards) {
-    const delta = cardChips(card);
-    chips += delta;
+    const label = cardEventLabel(card);
+
+    let chipsBefore = chips;
+    let multBefore = mult;
+    const first = scoreCardOnce(card, chips, mult);
+    chips = first.chips;
+    mult = first.mult;
+    money += first.money;
     events.push({
       kind: 'card',
-      label: cardLabel(card),
-      chipsDelta: delta,
-      multDelta: 0,
+      label,
+      chipsDelta: chips - chipsBefore,
+      multDelta: mult - multBefore,
+      chipsAfter: chips,
+      multAfter: mult,
+      sourceId: card.id,
+    });
+
+    // 朱砂蜡封：牌面与增强整套重触发一次（金砂也随之再给一次钱）
+    if (card.seal === 'red') {
+      chipsBefore = chips;
+      multBefore = mult;
+      const again = scoreCardOnce(card, chips, mult);
+      chips = again.chips;
+      mult = again.mult;
+      money += again.money;
+      events.push({
+        kind: 'card',
+        label: `${label} · 朱砂重触发`,
+        chipsDelta: chips - chipsBefore,
+        multDelta: mult - multBefore,
+        chipsAfter: chips,
+        multAfter: mult,
+        sourceId: card.id,
+      });
+    }
+  }
+
+  // 铸铁：没打出去的牌也能加乘。顺序固定在计分牌之后、小丑之前。
+  for (const card of input.held ?? []) {
+    if (card.enhancement !== 'steel') continue;
+    const before = mult;
+    mult = round2(mult * 1.5);
+    events.push({
+      kind: 'card',
+      label: `${cardLabel(card)} · 铸铁（留手）`,
+      chipsDelta: 0,
+      multDelta: mult - before,
       chipsAfter: chips,
       multAfter: mult,
       sourceId: card.id,
@@ -91,7 +181,7 @@ export function scoreHand(input: ScoreInput): ScoreResult {
 
     const multBefore = mult;
     chips += mods.chips;
-    mult = (mult + mods.mult) * mods.xMult;
+    mult = round2((mult + mods.mult) * mods.xMult);
 
     events.push({
       kind: 'joker',
@@ -107,8 +197,9 @@ export function scoreHand(input: ScoreInput): ScoreResult {
   return {
     handType: evalResult.type,
     chips,
-    mult,
-    score: chips * mult,
+    mult: round2(mult),
+    score: Math.round(chips * mult),
+    money,
     events,
     scoringCardIds: scoringCards.map((c) => c.id),
     debuffedCardIds,

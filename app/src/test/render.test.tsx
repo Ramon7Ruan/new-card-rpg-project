@@ -99,6 +99,7 @@ describe('渲染冒烟', () => {
         chips: 200,
         mult: 9,
         score: 1800,
+        money: 0,
         events: [],
         scoringCardIds: [],
         debuffedCardIds: [],

@@ -103,6 +103,12 @@ button:disabled {
   transition: color 0.15s, border-color 0.15s;
 }
 
+.topbar-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
 .ghost-btn:hover {
   color: var(--text);
   border-color: rgba(255, 255, 255, 0.2);
@@ -361,6 +367,13 @@ button:disabled {
 .score-total {
   font-size: 15px;
   color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 金砂蜡封：本次计分额外拿到的钱 */
+.score-money {
+  font-size: 12px;
+  color: var(--gold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -771,6 +784,210 @@ button:disabled {
   letter-spacing: 0.06em;
 }
 
+/* ── 牌型等级面板 ── */
+.panel-levels {
+  max-width: 520px;
+}
+
+.level-table {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.level-row {
+  display: grid;
+  grid-template-columns: 1fr 54px 104px 86px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.level-row.is-head {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding-bottom: 2px;
+}
+
+.level-row:not(.is-head):nth-child(even) {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+/* 当前选中的那一手牌型：金色描边，一眼看到「我现在打的是几级」 */
+.level-row.is-current {
+  background: rgba(224, 177, 85, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(224, 177, 85, 0.35);
+}
+
+.lv-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lv-now {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--gold);
+  border: 1px solid rgba(224, 177, 85, 0.4);
+  border-radius: 3px;
+  padding: 0 3px;
+  line-height: 1.5;
+}
+
+.lv-num {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lv-num.is-up {
+  color: var(--gold);
+  font-weight: 500;
+}
+
+.lv-val {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lv-val .chips {
+  color: var(--chip);
+  font-weight: 500;
+}
+
+.lv-val .mult {
+  color: var(--mult);
+  font-weight: 500;
+}
+
+.lv-val i {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.lv-next {
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+
+/* 增强：右上角短标签 */
+.card-enh {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  font-size: 8px;
+  line-height: 1.5;
+  padding: 0 3px;
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+  background: rgba(35, 38, 43, 0.85);
+  color: #f6f1e3;
+}
+
+.card-enh.is-bonus {
+  background: rgba(90, 169, 230, 0.92);
+}
+
+.card-enh.is-mult {
+  background: rgba(224, 96, 63, 0.92);
+}
+
+.card-enh.is-glass {
+  background: rgba(126, 186, 214, 0.92);
+  color: #0d1a22;
+}
+
+.card-enh.is-steel {
+  background: rgba(158, 167, 180, 0.94);
+  color: #15181e;
+}
+
+.card-enh.is-gold {
+  background: rgba(224, 177, 85, 0.95);
+  color: #2a1f08;
+}
+
+.card-enh.is-wild {
+  background: rgba(146, 116, 205, 0.92);
+}
+
+/* 蜡封：内描边。比加角标更省位置，也不跟「已计分」的角点打架 */
+.card.seal-red {
+  outline: 1.5px solid rgba(212, 87, 76, 0.85);
+  outline-offset: -3px;
+}
+
+.card.seal-gold {
+  outline: 1.5px solid rgba(224, 177, 85, 0.9);
+  outline-offset: -3px;
+}
+
+/* ── 牌堆面板 ── */
+.panel-deck {
+  max-width: 720px;
+  max-height: 90vh;
+}
+
+.deck-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 4px;
+  min-height: 120px;
+}
+
+.deck-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.deck-suit {
+  flex: 0 0 20px;
+  text-align: center;
+  font-size: 16px;
+  line-height: 1;
+  padding-top: 4px;
+}
+
+.deck-suit.is-red {
+  color: var(--card-red);
+}
+
+.deck-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.deck-cards .card {
+  width: 54px;
+  height: 76px;
+}
+
+.deck-cards .card .card-pip {
+  font-size: 20px;
+}
+
+.deck-cards .card:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+/* 牌堆里选中不能抬起 18px，否则压到上一行 */
+.deck-cards .card.is-selected,
+.deck-cards .card.is-selected:hover {
+  transform: translateY(-2px);
+}
+
 /* ── 商店：商品类型与卖出区 ── */
 .panel-shop {
   max-width: 600px;
@@ -966,5 +1183,16 @@ button:disabled {
 
   .blind-card .tag {
     line-height: 1.5;
+  }
+
+  .level-row {
+    grid-template-columns: 1fr 44px 86px 70px;
+    gap: 6px;
+    padding: 5px 6px;
+    font-size: 11px;
+  }
+
+  .lv-next {
+    font-size: 10px;
   }
 }

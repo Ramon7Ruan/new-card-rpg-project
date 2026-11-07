@@ -29,14 +29,24 @@ function groupByRank(cards: Card[]): Card[][] {
   return [...map.values()].sort((a, b) => b.length - a.length || b[0].rank - a[0].rank);
 }
 
+/**
+ * 同花判定。幻形（wild）牌视为任意花色，所以只拿其余牌去比对：
+ * 5 张全幻形也算同花（没有反例可依）。
+ */
+function isFlushShape(cards: Card[]): boolean {
+  const real = cards.filter((c) => c.enhancement !== 'wild');
+  if (real.length <= 1) return true;
+  const suit = real[0].suit;
+  return real.every((c) => c.suit === suit);
+}
+
 export function evaluateHand(cards: Card[]): HandEvalResult {
   const n = cards.length;
   if (n === 0) return { type: 'highCard', scoringCardIds: [] };
 
   const allIds = () => cards.map((c) => c.id);
   const groups = groupByRank(cards);
-  const suits = new Set(cards.map((c) => c.suit));
-  const isFlush = n === 5 && suits.size === 1;
+  const isFlush = n === 5 && isFlushShape(cards);
   const isStraight = n === 5 && isFiveConsecutive(cards.map((c) => c.rank));
   const isFullHouseShape = groups.length === 2 && groups[0].length === 3 && groups[1].length === 2;
 

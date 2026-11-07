@@ -120,14 +120,16 @@ describe('E2E：失败路径', () => {
   });
 });
 
-/** 从真实商店 roll 里找出一个带消耗品位的货架，避免测试里手写假商品 */
+/** 从真实商店 roll 里找出一个带「铭文」位的货架，避免测试里手写假商品 */
 function findPlanetShop(seed: string): { shop: ShopState; index: number } {
   for (let nonce = 0; nonce < 200; nonce++) {
     const shop = rollShop(seed, nonce);
-    const index = shop.offers.findIndex((o) => o.kind === 'consumable');
+    const index = shop.offers.findIndex(
+      (o) => o.kind === 'consumable' && !!getConsumable(o.defId)?.target,
+    );
     if (index >= 0) return { shop, index };
   }
-  throw new Error('200 次 roll 都没有消耗品位，商店权重有问题');
+  throw new Error('200 次 roll 都没有铭文位，商店权重有问题');
 }
 
 function toFirstShop(): RunState {

@@ -1,4 +1,4 @@
-import { isRedSuit, rankLabel, SUIT_SYMBOL } from '../core/cards';
+import { cardTitle, ENHANCEMENT_LABEL, isRedSuit, rankLabel, SUIT_SYMBOL } from '../core/cards';
 import type { Card } from '../core/types';
 
 interface Props {
@@ -24,15 +24,25 @@ export function CardView({ card, selected, scoring, counted, debuffed, small, di
     scoring ? 'is-scoring' : '',
     counted ? 'is-counted' : '',
     debuffed ? 'is-debuffed' : '',
+    card.seal ? `seal-${card.seal}` : '',
   ]
     .filter(Boolean)
     .join(' ');
 
   return (
-    <button type="button" className={cls} onClick={onClick} disabled={disabled || !onClick}>
+    <button
+      type="button"
+      className={cls}
+      title={cardTitle(card)}
+      onClick={onClick}
+      disabled={disabled || !onClick}
+    >
       <span className="card-corner">{rankLabel(card.rank)}</span>
       <span className="card-pip">{SUIT_SYMBOL[card.suit]}</span>
       <span className="card-corner card-corner-bottom">{rankLabel(card.rank)}</span>
+      {card.enhancement && (
+        <span className={`card-enh is-${card.enhancement}`}>{ENHANCEMENT_LABEL[card.enhancement]}</span>
+      )}
     </button>
   );
 }
