@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
-import { BLIND_NAMES, MAX_ANTE, rewardFor, targetFor } from '../core/blinds';
+import {
+  BLIND_NAMES,
+  describeBlindRule,
+  getBoss,
+  MAX_ANTE,
+  rewardFor,
+  rollBoss,
+  targetFor,
+} from '../core/blinds';
 import { HAND_LABEL } from '../core/hands';
 import { getJoker, MAX_JOKERS } from '../core/jokers';
 import { clearRun, loadRun, saveRun } from '../core/persist';
@@ -48,8 +56,8 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
   const selectedCards = state.hand.filter((c) => state.selected.includes(c.id));
 
   /**
-   * 选牌即算分：与出牌走同一个 scoreHand，因此预览值与真正结算值必然一致。
-   * 只在 playing 阶段且已选牌时计算。
+   * 选牌即算分：与出牌走同一个 scoreHand（同一份 Boss 规则），
+   * 因此预览值与真正结算值必然一致。
    */
   const preview = useMemo<ScoreResult | null>(() => {
     if (state.phase !== 'playing' || state.selected.length === 0) return null;
@@ -63,8 +71,15 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
       handsLeft: state.handsLeft,
       discardsUsed: state.discardsUsed,
       ante: state.ante,
+      rule: state.bossRule,
     });
   }, [state]);
+
+  /** 盲注选择页的 Boss 预览：与 selectBlind 用同一个解析函数，结果必然一致 */
+  const bossPreview = useMemo(
+    () => (state.phase === 'blindSelect' ? rollBoss(state.seed, state.ante) : null),
+    [state.phase, state.seed, state.ante],
+  );
 
   function handlePlay() {
     if (state.phase !== 'playing' || busy) return;
@@ -78,6 +93,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
       handsLeft: state.handsLeft,
       discardsUsed: state.discardsUsed,
       ante: state.ante,
+      rule: state.bossRule,
     });
     setAnim({ result, played: selectedCards, step: 0 });
   }
@@ -122,6 +138,10 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
   );
   const remaining = Math.max(state.target - state.roundScore, 0);
   const countedIds = preview ? new Set(preview.scoringCardIds) : null;
+  const debuffedIds = preview ? new Set(preview.debuffedCardIds) : null;
+  /** 铁律：必须恰好出满 N 张 */
+  const required = state.bossRule?.requirePlayedCards;
+  const playBlocked = required ? state.selected.length !== required : state.selected.length === 0;
 
   return (
     <div className="app">
@@ -175,6 +195,11 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
             {[0, 1, 2].map((i) => {
               const isCurrent = i === state.blindIndex;
               const isDone = i < state.blindIndex;
+              const boss = i === 2 ? bossPreview : null;
+              const effects = boss ? describeBlindRule(boss.rule).join(' · ') : '';
+              const req = boss
+                ? Math.round(targetFor(state.ante, i) * (boss.rule.targetMultiplier ?? 1))
+                : targetFor(state.ante, i);
               return (
                 <button
                   key={i}
@@ -183,12 +208,13 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
                   onClick={() => dispatch({ type: 'selectBlind' })}
                 >
                   <div>
-                    <div className="name">{BLIND_NAMES[i]}</div>
-                    <div className="tag">
-                      {isDone ? '已通过' : i === 2 ? 'Boss 位 · M0 无特殊效果' : '待挑战'}
+                    <div className="name">
+                      {BLIND_NAMES[i]}
+                      {boss && <span className="boss-name">{boss.boss.name}</span>}
                     </div>
+                    <div className="tag">{isDone ? '已通过' : effects || '待挑战'}</div>
                   </div>
-                  <span className="req">{targetFor(state.ante, i)}</span>
+                  <span className="req">{req}</span>
                 </button>
               );
             })}
@@ -215,6 +241,13 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
             )}
             <i style={{ width: `${progress}%` }} />
           </div>
+
+          {state.bossRule && (
+            <div className="rule-bar">
+              <span className="rule-name">Boss · {getBoss(state.bossId)?.name ?? '未知'}</span>
+              <span>{describeBlindRule(state.bossRule).join(' · ')}</span>
+            </div>
+          )}
 
           <div className="played-area">
             {anim ? (
@@ -263,6 +296,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
               card={c}
               selected={state.selected.includes(c.id)}
               counted={!!countedIds?.has(c.id)}
+              debuffed={!!debuffedIds?.has(c.id)}
               disabled={busy}
               onClick={() => dispatch({ type: 'toggleCard', cardId: c.id })}
             />
@@ -274,7 +308,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
         <footer className="actions">
           <button
             className="btn btn-primary"
-            disabled={busy || state.selected.length === 0}
+            disabled={busy || playBlocked}
             onClick={handlePlay}
           >
             出牌
@@ -293,8 +327,9 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
           <span className="counter">
             弃牌 <b>{state.discardsLeft}</b>
           </span>
-          <span className="counter">
-            已选 <b>{state.selected.length}</b>/5
+          <span className={`counter ${required ? 'is-required' : ''}`}>
+            已选 <b>{state.selected.length}</b>/{required ?? 5}
+            {required ? ` · 必须出满 ${required} 张` : ''}
           </span>
         </footer>
       )}

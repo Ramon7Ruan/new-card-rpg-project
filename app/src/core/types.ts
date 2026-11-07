@@ -44,6 +44,27 @@ export interface ScoreResult {
   score: number;
   events: ScoreEvent[];
   scoringCardIds: string[];
+  /** 被 Boss 规则压制、不计分的牌（仍参与牌型识别） */
+  debuffedCardIds: string[];
+}
+
+/**
+ * Boss 盲注的声明式规则。全部字段可选，未设置即无影响。
+ * 必须是纯数据（可 JSON 序列化），不能放函数——否则存档会坏。
+ */
+export interface BlindRule {
+  /** 目标分数倍率，如 1.5 */
+  targetMultiplier?: number;
+  /** 禁止弃牌 */
+  forbidDiscards?: boolean;
+  /** 手牌上限增量 */
+  handSizeDelta?: number;
+  /** 必须恰好打出 N 张才能出牌 */
+  requirePlayedCards?: number;
+  /** 该花色不计分 */
+  debuffSuit?: Suit;
+  /** J/Q/K 不计分 */
+  debuffFace?: boolean;
 }
 
 export interface JokerInstance {
@@ -66,6 +87,8 @@ export interface ShopState {
 export type Phase = 'blindSelect' | 'playing' | 'cashOut' | 'shop' | 'won' | 'lost';
 
 export interface RunState {
+  /** 存档结构版本，用于迁移 */
+  version: number;
   seed: string;
   ante: number;
   /** 0=小盲 1=大盲 2=Boss */
@@ -78,6 +101,13 @@ export interface RunState {
 
   jokers: JokerInstance[];
   handLevels: Record<HandType, number>;
+
+  /** 当前盲注的 Boss（非 Boss 盲注为 null） */
+  bossId: string | null;
+  /** 已解析的 Boss 规则，纯数据可序列化 */
+  bossRule: BlindRule | null;
+  /** 本回合手牌上限（Boss 可减少） */
+  handSize: number;
 
   handsLeft: number;
   discardsLeft: number;

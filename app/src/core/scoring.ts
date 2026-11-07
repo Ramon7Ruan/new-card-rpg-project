@@ -2,7 +2,7 @@ import { cardChips, cardLabel } from './cards';
 import { evaluateHand } from './handEval';
 import { baseFor, HAND_LABEL } from './hands';
 import { getJoker, type JokerCtx } from './jokers';
-import type { Card, HandType, JokerInstance, ScoreEvent, ScoreResult } from './types';
+import type { BlindRule, Card, HandType, JokerInstance, ScoreEvent, ScoreResult } from './types';
 
 export interface ScoreInput {
   played: Card[];
@@ -13,6 +13,16 @@ export interface ScoreInput {
   handsLeft: number;
   discardsUsed: number;
   ante: number;
+  /** Boss 规则：被压制的牌不计筹码，但仍参与牌型识别 */
+  rule?: BlindRule | null;
+}
+
+/** 被 Boss 规则压制的牌：花色被点名，或人头牌被点名 */
+function isDebuffed(card: Card, rule: BlindRule | null): boolean {
+  if (!rule) return false;
+  if (rule.debuffSuit && card.suit === rule.debuffSuit) return true;
+  if (rule.debuffFace && card.rank >= 11 && card.rank <= 13) return true;
+  return false;
 }
 
 /**
@@ -40,7 +50,11 @@ export function scoreHand(input: ScoreInput): ScoreResult {
   ];
 
   const scoringSet = new Set(evalResult.scoringCardIds);
-  const scoringCards = input.played.filter((c) => scoringSet.has(c.id));
+  const rule = input.rule ?? null;
+  const scoringCards = input.played.filter((c) => scoringSet.has(c.id) && !isDebuffed(c, rule));
+  const debuffedCardIds = input.played
+    .filter((c) => scoringSet.has(c.id) && isDebuffed(c, rule))
+    .map((c) => c.id);
 
   for (const card of scoringCards) {
     const delta = cardChips(card);
@@ -96,6 +110,7 @@ export function scoreHand(input: ScoreInput): ScoreResult {
     mult,
     score: chips * mult,
     events,
-    scoringCardIds: evalResult.scoringCardIds,
+    scoringCardIds: scoringCards.map((c) => c.id),
+    debuffedCardIds,
   };
 }

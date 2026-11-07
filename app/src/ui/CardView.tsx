@@ -8,12 +8,14 @@ interface Props {
   scoring?: boolean;
   /** 选牌预览阶段：这张牌会被计分（角标提示） */
   counted?: boolean;
+  /** 被 Boss 规则压制：不计分（红色斜线） */
+  debuffed?: boolean;
   small?: boolean;
   disabled?: boolean;
   onClick?: () => void;
 }
 
-export function CardView({ card, selected, scoring, counted, small, disabled, onClick }: Props) {
+export function CardView({ card, selected, scoring, counted, debuffed, small, disabled, onClick }: Props) {
   const cls = [
     'card',
     small ? 'card-sm' : '',
@@ -21,6 +23,7 @@ export function CardView({ card, selected, scoring, counted, small, disabled, on
     selected ? 'is-selected' : '',
     scoring ? 'is-scoring' : '',
     counted ? 'is-counted' : '',
+    debuffed ? 'is-debuffed' : '',
   ]
     .filter(Boolean)
     .join(' ');

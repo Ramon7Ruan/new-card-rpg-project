@@ -1,4 +1,4 @@
-import { MAX_ANTE, rewardFor, targetFor } from './blinds';
+import { MAX_ANTE, resolveBoss, rewardFor, targetFor } from './blinds';
 import { createDeck, sortHand } from './cards';
 
 import { initialHandLevels } from './hands';
@@ -6,16 +6,19 @@ import { getJoker, MAX_JOKERS } from './jokers';
 import { makeRng, randomSeed, shuffle } from './rng';
 import { scoreHand } from './scoring';
 import { rollShop } from './shop';
-import type { Card, RunState } from './types';
+import type { BlindRule, Card, RunState } from './types';
 
 export const HAND_SIZE = 8;
 export const HANDS_PER_ROUND = 4;
 export const DISCARDS_PER_ROUND = 3;
 export const INTEREST_CAP = 5;
+/** 存档结构版本。改 RunState 字段时必须 +1，并在 persist.ts 补迁移。 */
+export const SAVE_VERSION = 2;
 
 export function createRun(seed: string = randomSeed()): RunState {
   const deck = shuffle(createDeck(), makeRng(seed, 'deck'));
   return {
+    version: SAVE_VERSION,
     seed,
     ante: 1,
     blindIndex: 0,
@@ -25,6 +28,9 @@ export function createRun(seed: string = randomSeed()): RunState {
     hand: [],
     jokers: [],
     handLevels: initialHandLevels(),
+    bossId: null,
+    bossRule: null,
+    handSize: HAND_SIZE,
     handsLeft: HANDS_PER_ROUND,
     discardsLeft: DISCARDS_PER_ROUND,
     discardsUsed: 0,
@@ -65,7 +71,8 @@ function draw(
 
 export type Action =
   | { type: 'newRun'; seed?: string }
-  | { type: 'selectBlind' }
+  /** bossId 仅供测试/调试显式指定，正常流程由 seed 决定 */
+  | { type: 'selectBlind'; bossId?: string }
   | { type: 'toggleCard'; cardId: string }
   | { type: 'playHand' }
   | { type: 'discard' }
@@ -85,13 +92,33 @@ export function reducer(state: RunState, action: Action): RunState {
 
     case 'selectBlind': {
       if (state.phase !== 'blindSelect') return state;
+
+      // Boss 位：解析规则并在这里一次性套用。**这是全部盲注规则的唯一入口**，
+      // 不在 playHand / discard 里各写一份判断。
+      let bossId: string | null = null;
+      let bossRule: BlindRule | null = null;
+      if (state.blindIndex >= 2) {
+        const resolved = resolveBoss(state.seed, state.ante, action.bossId);
+        bossId = resolved.boss.id;
+        bossRule = resolved.rule;
+      }
+
+      const target = Math.round(
+        targetFor(state.ante, state.blindIndex) * (bossRule?.targetMultiplier ?? 1),
+      );
+      const handSize = Math.max(1, HAND_SIZE + (bossRule?.handSizeDelta ?? 0));
+      const discardsLeft = bossRule?.forbidDiscards ? 0 : DISCARDS_PER_ROUND;
+
       const recycled: Card[] = [...state.discardPile, ...state.hand];
       const fresh: RunState = {
         ...state,
         phase: 'playing',
-        target: targetFor(state.ante, state.blindIndex),
+        bossId,
+        bossRule,
+        handSize,
+        target,
         handsLeft: HANDS_PER_ROUND,
-        discardsLeft: DISCARDS_PER_ROUND,
+        discardsLeft,
         discardsUsed: 0,
         roundScore: 0,
         discardPile: recycled,
@@ -99,7 +126,7 @@ export function reducer(state: RunState, action: Action): RunState {
         selected: [],
         lastScore: null,
       };
-      return { ...fresh, ...draw(fresh, HAND_SIZE) };
+      return { ...fresh, ...draw(fresh, handSize) };
     }
 
     case 'toggleCard': {
@@ -116,6 +143,10 @@ export function reducer(state: RunState, action: Action): RunState {
       if (state.phase !== 'playing') return state;
       if (state.selected.length === 0 || state.selected.length > 5) return state;
 
+      // 铁律：必须恰好出满 N 张，否则不响应（界面同步禁用按钮）
+      const required = state.bossRule?.requirePlayedCards;
+      if (required && state.selected.length !== required) return state;
+
       const played = state.hand.filter((c) => state.selected.includes(c.id));
       if (played.length === 0) return state;
 
@@ -127,6 +158,7 @@ export function reducer(state: RunState, action: Action): RunState {
         handsLeft: state.handsLeft,
         discardsUsed: state.discardsUsed,
         ante: state.ante,
+        rule: state.bossRule,
       });
 
       const remaining = state.hand.filter((c) => !state.selected.includes(c.id));
@@ -149,7 +181,7 @@ export function reducer(state: RunState, action: Action): RunState {
       };
 
       if (phase !== 'playing') return next;
-      return { ...next, ...draw(next, HAND_SIZE - next.hand.length) };
+      return { ...next, ...draw(next, next.handSize - next.hand.length) };
     }
 
     case 'discard': {
@@ -168,7 +200,7 @@ export function reducer(state: RunState, action: Action): RunState {
         discardsUsed: state.discardsUsed + 1,
         selected: [],
       };
-      return { ...next, ...draw(next, HAND_SIZE - next.hand.length) };
+      return { ...next, ...draw(next, next.handSize - next.hand.length) };
     }
 
     case 'cashOut': {
@@ -236,6 +268,9 @@ export function reducer(state: RunState, action: Action): RunState {
         blindIndex,
         phase: 'blindSelect',
         shop: null,
+        bossId: null,
+        bossRule: null,
+        handSize: HAND_SIZE,
         target: targetFor(ante, blindIndex),
         discardPile: [...state.discardPile, ...state.hand],
         hand: [],
