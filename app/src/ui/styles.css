@@ -47,7 +47,7 @@ button:disabled {
   min-height: 100%;
   max-width: 1080px;
   margin: 0 auto;
-  padding: 16px 20px 28px;
+  padding: 16px 20px 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -429,6 +429,17 @@ button:disabled {
   gap: 10px;
 }
 
+/* 常驻页脚声明：不占交互区域，只为公开发布留痕 */
+.site-note {
+  margin: 0;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+  opacity: 0.55;
+  user-select: none;
+}
+
 .btn {
   border: 1px solid var(--line);
   background: var(--panel-2);
@@ -678,4 +689,81 @@ button:disabled {
   font-size: 11px;
   color: #5c5b63;
   letter-spacing: 0.06em;
+}
+
+/* ── 窄屏（≤720px）：只保证不横向溢出与可点，完整移动端版式留到 P7 ── */
+@media (max-width: 720px) {
+  .app {
+    padding: 10px 12px 8px;
+    gap: 10px;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    padding: 10px 12px;
+  }
+
+  .topbar .spacer {
+    display: none;
+  }
+
+  .stack-end {
+    margin-left: auto;
+  }
+
+  .joker-row {
+    gap: 6px;
+    min-height: 72px;
+  }
+
+  .joker {
+    width: 54px;
+    height: 72px;
+    padding: 5px 4px;
+  }
+
+  /* 手牌：8 张必须一眼看全，所以按可用宽度等分收缩，而不是横向滚动。
+     overflow-x 只作为兜底（牌数增多时才触发）。 */
+  .hand-row {
+    justify-content: flex-start;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 10px 0 6px;
+    min-height: 104px;
+    scrollbar-width: none;
+  }
+
+  .hand-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hand-row .card {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 74px;
+    height: 86px;
+  }
+
+  .hand-row .card .card-pip {
+    font-size: 22px;
+  }
+
+  .hand-row .card .card-corner {
+    font-size: 11px;
+  }
+
+  .blind-card {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  /* flex 子项默认 min-width:auto，长文案会把右侧数字挤出去 */
+  .blind-card > div {
+    min-width: 0;
+  }
+
+  .blind-card .tag {
+    line-height: 1.5;
+  }
 }

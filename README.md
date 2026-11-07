@@ -2,6 +2,10 @@
 
 单人 Roguelike 扑克卡牌游戏。玩法源自扑克牌型 + 筹码×倍率的目标分数闯关，纯前端、无后端、无联网、可离线运行。
 
+**在线试玩**：https://ramon7ruan.github.io/new-card-rpg-project/
+
+push 到 `main` 后由 GitHub Actions 自动构建发布（见 `.github/workflows/deploy.yml`），测试不通过则不部署。
+
 ## 目录
 
 | 路径 | 内容 |

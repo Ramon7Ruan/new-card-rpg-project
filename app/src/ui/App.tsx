@@ -163,7 +163,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
           </span>
         </div>
         <div className="spacer" />
-        <div className="stack" style={{ alignItems: 'flex-end' }}>
+        <div className="stack stack-end" style={{ alignItems: 'flex-end' }}>
           <span className="label">资金</span>
           <span className="money">${state.money}</span>
         </div>
@@ -366,6 +366,10 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
           </div>
         </div>
       )}
+
+      <p className="site-note">
+        非官方粉丝项目 · 与任何原作开发商、发行商无关联 · 非商业用途 · 不含原作素材
+      </p>
     </div>
   );
 }
