@@ -120,16 +120,14 @@ describe('E2E：失败路径', () => {
   });
 });
 
-/** 从真实商店 roll 里找出一个带「铭文」位的货架，避免测试里手写假商品 */
+/** 从真实商店 roll 里找出一个带「星球（铭文）」位的货架，避免测试里手写假商品 */
 function findPlanetShop(seed: string): { shop: ShopState; index: number } {
   for (let nonce = 0; nonce < 200; nonce++) {
     const shop = rollShop(seed, nonce);
-    const index = shop.offers.findIndex(
-      (o) => o.kind === 'consumable' && !!getConsumable(o.defId)?.target,
-    );
+    const index = shop.consumables.findIndex((o) => !!getConsumable(o.defId)?.target);
     if (index >= 0) return { shop, index };
   }
-  throw new Error('200 次 roll 都没有铭文位，商店权重有问题');
+  throw new Error('200 次 roll 都没有星球位，消耗品池权重有问题');
 }
 
 function toFirstShop(): RunState {
@@ -148,7 +146,7 @@ describe('E2E：P1 闭环（买铭文 → 使用 → 等级生效 → 存档 →
     const { shop, index } = findPlanetShop('P1FLOW');
     s = { ...s, shop: { ...shop, rerollCost: 5, rerolls: 0 } };
 
-    const offer = s.shop!.offers[index];
+    const offer = s.shop!.consumables[index];
     const def = getConsumable(offer.defId);
     expect(def?.target).toBeTruthy();
     const target = def!.target!;
@@ -202,8 +200,9 @@ describe('E2E：P1 闭环（买铭文 → 使用 → 等级生效 → 存档 →
 
   it('小丑槽满时卖出换位：真实商店里买 → 卖 → 再买', () => {
     let s = toFirstShop();
-    const jokerIndex = s.shop!.offers.findIndex((o) => o.kind === 'joker');
-    expect(jokerIndex).toBeGreaterThanOrEqual(0);
+    // 小丑货架固定 3 张，取第一张
+    const jokerIndex = 0;
+    expect(s.shop!.jokers.length).toBe(3);
 
     // 先塞满 5 个槽
     s = {
@@ -215,7 +214,7 @@ describe('E2E：P1 闭环（买铭文 → 使用 → 等级生效 → 存档 →
       })),
     };
 
-    const cost = s.shop!.offers[jokerIndex].cost;
+    const cost = s.shop!.jokers[jokerIndex].cost;
     const moneyBefore = s.money;
     const blocked = reducer(s, { type: 'buyJoker', index: jokerIndex });
     expect(blocked).toBe(s);
@@ -225,7 +224,7 @@ describe('E2E：P1 闭环（买铭文 → 使用 → 等级生效 → 存档 →
 
     s = reducer(s, { type: 'buyJoker', index: jokerIndex });
     expect(s.jokers).toHaveLength(5);
-    expect(s.jokers[4].defId).toBe(s.shop!.offers[jokerIndex].defId);
+    expect(s.jokers[4].defId).toBe(s.shop!.jokers[jokerIndex].defId);
     expect(s.money).toBe(moneyBefore + sellValue(getJoker('jester')!.cost) - cost);
     expect(countCards(s)).toBe(52);
   });

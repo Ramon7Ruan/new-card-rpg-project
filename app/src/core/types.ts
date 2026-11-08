@@ -100,18 +100,46 @@ export interface ConsumableInstance {
   defId: string;
 }
 
+/** 旧存档里的商品类型标记，只用于迁移；新结构靠货架本身区分类型 */
 export type ShopKind = 'joker' | 'consumable';
 
 export interface ShopOffer {
   defId: string;
-  /** 商品类型，决定买进哪个槽位 */
-  kind: ShopKind;
   cost: number;
   sold: boolean;
 }
 
+/**
+ * 商店状态：**两个独立货架**（P3）。类型由货架决定，商品上不再存 kind，
+ * 避免出现「kind 与所在货架不一致」这种只有迁移时才会碰到的坏状态。
+ */
+/**
+ * 补充包（P3）：买下后开包，从 N 张里选 1 张（也可以整包跳过）。
+ * 开包的候选放在 RunState.pack 里，是**纯数据**——刷新页面不会丢包。
+ */
+export type PackKind = 'joker' | 'planet' | 'charm' | 'standard';
+
+export type PackChoice =
+  | { kind: 'joker'; defId: string }
+  | { kind: 'consumable'; defId: string }
+  /** 标准包：直接给一张牌（可能带增强），进牌堆 */
+  | { kind: 'card'; card: Card };
+
+export interface PackState {
+  /** 开的是哪种包，用于标题与文案 */
+  packId: string;
+  choices: PackChoice[];
+}
+
 export interface ShopState {
-  offers: ShopOffer[];
+  /** 小丑货架，默认 3 张（优惠券可加宽） */
+  jokers: ShopOffer[];
+  /** 星球 + 符咒货架，默认 2 张 */
+  consumables: ShopOffer[];
+  /** 优惠券货架，每次最多 1 张；池子空了为 null */
+  voucher: ShopOffer | null;
+  /** 补充包货架，固定 2 个 */
+  packs: ShopOffer[];
   rerollCost: number;
   rerolls: number;
 }
@@ -134,8 +162,13 @@ export interface RunState {
   jokers: JokerInstance[];
   /** 消耗品槽，上限 MAX_CONSUMABLES */
   consumables: ConsumableInstance[];
+  /** 已购买的优惠券 id（P3）。永久生效，进存档。 */
+  vouchers: string[];
+  /** 跳过盲注累计获得的标签 id（P3），只用于展示与回看 */
+  tags: string[];
+  /** 剩余免费重摇次数（「会员卡」标签），进商店时消耗 */
+  freeRerolls: number;
   handLevels: Record<HandType, number>;
-
   /** 当前盲注的 Boss（非 Boss 盲注为 null） */
   bossId: string | null;
   /** 已解析的 Boss 规则，纯数据可序列化 */
@@ -154,6 +187,10 @@ export interface RunState {
 
   phase: Phase;
   shop: ShopState | null;
+  /** 已买下、正在开包的补充包。普通状态下为 null */
+  pack: PackState | null;
+  /** 开包计数器：给标准包生成的牌造唯一 id */
+  packSeq: number;
   lastScore: ScoreResult | null;
 
   selected: string[];

@@ -81,7 +81,11 @@ describe('P2-4 选目标的使用流程', () => {
 
   it('目标可以是牌堆里的牌（商店页手牌为空也能用）', () => {
     const s = withCharm(
-      atTable([], { deck: [card('d', 7)], phase: 'shop', shop: { offers: [], rerollCost: 5, rerolls: 0 } }),
+      atTable([], {
+        deck: [card('d', 7)],
+        phase: 'shop',
+        shop: { jokers: [], consumables: [], voucher: null, packs: [], rerollCost: 5, rerolls: 0 },
+      }),
       'charm-mult',
     );
     const after = use(s, ['diamond-7']);
@@ -224,7 +228,10 @@ describe('P2-4 与铭文共存', () => {
       phase: 'shop',
       money: 99,
       shop: {
-        offers: [{ defId: 'charm-bonus', kind: 'consumable', cost: 4, sold: false }],
+        jokers: [],
+        consumables: [{ defId: 'charm-bonus', cost: 4, sold: false }],
+        voucher: null,
+        packs: [],
         rerollCost: 5,
         rerolls: 0,
       },

@@ -1,16 +1,35 @@
-import { CONSUMABLES, type ConsumableDef } from './consumables';
-import { JOKERS, type JokerDef } from './jokers';
-import { makeRng, type Rng } from './rng';
-import type { ShopOffer, ShopState } from './types';
+import { PACKS, PACKS_PER_SHOP, rollPacks } from './packs';
+import { drawConsumables, drawJokers } from './pools';
+import { makeRng } from './rng';
+import type { ShopState } from './types';
 
-export const SHOP_SLOTS = 2;
+/**
+ * 商店是**两个独立池子**（P3 改动，玩家要求）：
+ * - 小丑：自己的池，每次固定 3 张。原来小丑与消耗品混在一个池子里，
+ *   消耗品一多就把小丑挤掉了。
+ * - 消耗品：星球（铭文）+ 符咒合成一个池，每次固定 2 张。原来单店最多 1 张。
+ * 两个池各自内部去重，且槽位数可以分别被优惠券加宽。
+ *
+ * 补充包（2 个）由 rollPacks 抽、优惠券（1 张）由 rollVoucher 抽：
+ * 前者要知道底注，后者要知道已买过哪些券，都不属于纯货架逻辑。
+ */
+export const JOKER_SHELF = 3;
+export const CONSUMABLE_SHELF = 2;
+export { PACKS_PER_SHOP };
 export const REROLL_BASE = 5;
-/** 每个商品位出现消耗品的概率 */
-export const CONSUMABLE_SLOT_CHANCE = 0.3;
-/** 单次商店最多 1 个消耗品位：保证任何时候都有小丑可买 */
-export const MAX_CONSUMABLE_OFFERS = 1;
 /** 卖出回收比例。改这一行即可调「卖出价是原价的几成」 */
 export const SELL_RATE = 0.5;
+
+/** 货架宽度。优惠券会把它加宽，因此必须是可传入的参数而不是常量。 */
+export interface ShopShelf {
+  jokers: number;
+  consumables: number;
+}
+
+export const DEFAULT_SHELF: ShopShelf = {
+  jokers: JOKER_SHELF,
+  consumables: CONSUMABLE_SHELF,
+};
 
 /** 卖出价 = 原价 × SELL_RATE，向下取整，最低 $1 */
 export function sellValue(cost: number): number {
@@ -18,48 +37,24 @@ export function sellValue(cost: number): number {
   return Math.max(1, Math.floor(cost * SELL_RATE));
 }
 
-/** 稀有度权重：普通 70% / 罕见 25% / 稀有 5% */
-function pickByRarity(rnd: Rng, exclude: Set<string>): JokerDef | null {
-  const roll = rnd();
-  const rarity: JokerDef['rarity'] = roll < 0.7 ? 'common' : roll < 0.95 ? 'uncommon' : 'rare';
-  let pool = JOKERS.filter((j) => j.rarity === rarity && !exclude.has(j.id));
-  if (pool.length === 0) pool = JOKERS.filter((j) => !exclude.has(j.id));
-  if (pool.length === 0) return null;
-  return pool[Math.floor(rnd() * pool.length)];
+export function rollShop(
+  seed: string,
+  nonce: number,
+  shelf: ShopShelf = DEFAULT_SHELF,
+): ShopState {
+  // 两个池用两个子流：加宽小丑货架不会改变消耗品的抽取结果（可预测、好调试）
+  const jokerRnd = makeRng(seed, `shop:${nonce}:joker`);
+  const consumableRnd = makeRng(seed, `shop:${nonce}:consumable`);
+
+  return {
+    jokers: drawJokers(jokerRnd, Math.max(0, shelf.jokers)),
+    consumables: drawConsumables(consumableRnd, Math.max(0, shelf.consumables)),
+    voucher: null,
+    packs: rollPacks(seed, nonce, PACKS_PER_SHOP),
+    rerollCost: REROLL_BASE,
+    rerolls: 0,
+  };
 }
 
-function pickConsumable(rnd: Rng, exclude: Set<string>): ConsumableDef | null {
-  const pool = CONSUMABLES.filter((c) => !exclude.has(c.id));
-  if (pool.length === 0) return null;
-  return pool[Math.floor(rnd() * pool.length)];
-}
-
-export function rollShop(seed: string, nonce: number): ShopState {
-  const rnd = makeRng(seed, `shop:${nonce}`);
-  const offers: ShopOffer[] = [];
-  const usedJokers = new Set<string>();
-  const usedConsumables = new Set<string>();
-  let consumablesPlaced = 0;
-
-  for (let i = 0; i < SHOP_SLOTS; i++) {
-    const wantsConsumable =
-      consumablesPlaced < MAX_CONSUMABLE_OFFERS && rnd() < CONSUMABLE_SLOT_CHANCE;
-
-    if (wantsConsumable) {
-      const def = pickConsumable(rnd, usedConsumables);
-      if (def) {
-        usedConsumables.add(def.id);
-        consumablesPlaced += 1;
-        offers.push({ defId: def.id, kind: 'consumable', cost: def.cost, sold: false });
-        continue;
-      }
-    }
-
-    const def = pickByRarity(rnd, usedJokers);
-    if (!def) break;
-    usedJokers.add(def.id);
-    offers.push({ defId: def.id, kind: 'joker', cost: def.cost, sold: false });
-  }
-
-  return { offers, rerollCost: REROLL_BASE, rerolls: 0 };
-}
+/** 供测试与调试：所有能挂出来的包 */
+export const ALL_PACK_IDS: string[] = PACKS.map((p) => p.id);

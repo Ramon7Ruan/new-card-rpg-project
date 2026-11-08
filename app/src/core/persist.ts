@@ -1,11 +1,17 @@
 import { getConsumable, MAX_CONSUMABLES } from './consumables';
 import { initialHandLevels } from './hands';
+import { getJoker } from './jokers';
+import { getPack } from './packs';
+import { getTag } from './tags';
 import { HAND_SIZE, SAVE_VERSION } from './run';
+import { getVoucher } from './vouchers';
 import type {
   BlindRule,
   Card,
   ConsumableInstance,
   Enhancement,
+  PackChoice,
+  PackState,
   RunState,
   Seal,
   ShopKind,
@@ -47,26 +53,129 @@ function migrateCards(raw: unknown): Card[] {
   return raw.map(sanitizeCard).filter((c): c is Card => c !== null);
 }
 
-/** 旧版存档只有小丑商品，缺 kind 的一律按 joker 补 */
+/** 旧版存档只有一条扁平的商品列表（带 kind），v5 起拆成两个货架 */
 function migrateShop(raw: unknown): ShopState | null {
   if (!raw || typeof raw !== 'object') return null;
-  const shop = raw as Partial<ShopState>;
-  if (!Array.isArray(shop.offers)) return null;
+  const shop = raw as Partial<ShopState> & { offers?: unknown };
+  const hasSplit = Array.isArray(shop.jokers) || Array.isArray(shop.consumables);
+  const hasLegacy = Array.isArray(shop.offers);
+  if (!hasSplit && !hasLegacy) return null;
 
-  const offers: ShopOffer[] = shop.offers
-    .filter((o) => o && typeof o.defId === 'string')
-    .map((o) => ({
-      defId: o.defId,
-      kind: (o.kind === 'consumable' ? 'consumable' : 'joker') as ShopKind,
-      cost: typeof o.cost === 'number' ? o.cost : 0,
-      sold: !!o.sold,
-    }));
+  let legacyJokers: unknown = shop.jokers;
+  let legacyConsumables: unknown = shop.consumables;
+
+  if (!hasSplit && hasLegacy) {
+    // v4 及更早：{ offers: [{ defId, kind, cost, sold }] }
+    const all = (shop.offers as { defId?: string; kind?: string }[]).filter(
+      (o) => o && typeof o.defId === 'string',
+    );
+    legacyJokers = all.filter((o) => o.kind !== 'consumable');
+    legacyConsumables = all.filter((o) => o.kind === 'consumable');
+  }
 
   return {
-    offers,
+    jokers: migrateOffers(legacyJokers, 'joker'),
+    consumables: migrateOffers(legacyConsumables, 'consumable'),
+    voucher: migrateVoucher(shop.voucher),
+    packs: migratePacks(shop.packs),
     rerollCost: typeof shop.rerollCost === 'number' ? shop.rerollCost : 5,
     rerolls: typeof shop.rerolls === 'number' ? shop.rerolls : 0,
   };
+}
+
+/** 补充包货位：认不出的包直接丢掉 */
+function migratePacks(raw: unknown): ShopOffer[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ShopOffer[] = [];
+  for (const item of raw as Partial<ShopOffer>[]) {
+    if (!item || typeof item.defId !== 'string') continue;
+    const def = getPack(item.defId);
+    if (!def) continue;
+    out.push({
+      defId: item.defId,
+      cost: typeof item.cost === 'number' ? item.cost : def.cost,
+      sold: !!item.sold,
+    });
+  }
+  return out;
+}
+
+/**
+ * 开着的包。刷新页面时包必须还在——候选是纯数据，牌是 Card（sanitize 过），
+ * 只要候选全坏掉就当没开过包，避免弹一个空面板。
+ */
+function migratePack(raw: unknown): PackState | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const p = raw as Partial<PackState>;
+  if (!Array.isArray(p.choices)) return null;
+
+  const choices: PackChoice[] = [];
+  for (const c of p.choices as PackChoice[]) {
+    if (!c || typeof c !== 'object') continue;
+    if (c.kind === 'joker' && typeof c.defId === 'string' && getJoker(c.defId)) {
+      choices.push({ kind: 'joker', defId: c.defId });
+    } else if (
+      c.kind === 'consumable' &&
+      typeof c.defId === 'string' &&
+      getConsumable(c.defId)
+    ) {
+      choices.push({ kind: 'consumable', defId: c.defId });
+    } else if (c.kind === 'card') {
+      const card = sanitizeCard(c.card);
+      if (card) choices.push({ kind: 'card', card });
+    }
+  }
+
+  if (choices.length === 0) return null;
+  return {
+    packId: typeof p.packId === 'string' && getPack(p.packId) ? p.packId : 'pack-standard',
+    choices,
+  };
+}
+
+/** 优惠券货位：id 不存在就当没挂券，避免渲染出一个空卡片 */
+function migrateVoucher(raw: unknown): ShopOffer | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Partial<ShopOffer>;
+  if (typeof o.defId !== 'string') return null;
+  const def = getVoucher(o.defId);
+  if (!def) return null;
+  return {
+    defId: o.defId,
+    cost: typeof o.cost === 'number' ? o.cost : def.cost,
+    sold: !!o.sold,
+  };
+}
+
+/** 已购优惠券：只保留认得出来的、去重。旧存档没有这个字段 → [] */
+function migrateVouchers(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const id of raw) {
+    if (typeof id !== 'string' || !getVoucher(id)) continue;
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+/**
+ * 货架商品迁移：扔掉结构不对的、以及 defId 已经不存在的条目。
+ * 后者是 P1 留下的老问题——删条目/改名后货架上会留一格空白或渲染白屏。
+ */
+function migrateOffers(raw: unknown, kind: ShopKind): ShopOffer[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ShopOffer[] = [];
+  for (const item of raw as Partial<ShopOffer>[]) {
+    if (!item || typeof item.defId !== 'string') continue;
+    const def = kind === 'joker' ? getJoker(item.defId) : getConsumable(item.defId);
+    if (!def) continue;
+    out.push({
+      defId: item.defId,
+      cost: typeof item.cost === 'number' ? item.cost : def.cost,
+      sold: !!item.sold,
+    });
+  }
+  return out;
 }
 
 /** 缺某种牌型的等级时补 1，避免 baseFor(undefined) 类的 NaN */
@@ -93,6 +202,17 @@ function migrateConsumables(raw: unknown): ConsumableInstance[] {
     .slice(0, MAX_CONSUMABLES);
 }
 
+/** 标签历史：只留认得出的，去重 */
+function migrateTags(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const id of raw) {
+    if (typeof id !== 'string' || !getTag(id)) continue;
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
 /**
  * 把任意来源的存档对象补齐成当前版本。
  * 规则：只补缺省字段，不做语义转换——旧存档打到一半的 Boss 盲注会保留当时的
@@ -115,8 +235,16 @@ export function migrateSave(raw: unknown): RunState | null {
     handSize: typeof s.handSize === 'number' ? s.handSize : HAND_SIZE,
     handLevels: migrateLevels(s.handLevels),
     consumables: migrateConsumables(s.consumables),
+    pack: migratePack(s.pack),
+    packSeq: typeof s.packSeq === 'number' && s.packSeq >= 0 ? Math.floor(s.packSeq) : 0,
+    // v5 → 优惠券 / 标签：旧存档没有这些字段，等价于「一张都没买、没跳过」
+    vouchers: migrateVouchers(s.vouchers),
+    tags: migrateTags(s.tags),
+    freeRerolls:
+      typeof s.freeRerolls === 'number' && s.freeRerolls >= 0 ? Math.floor(s.freeRerolls) : 0,
     shop: migrateShop(s.shop),
     // v3 → v4：牌多出 enhancement / seal 两个可选字段，旧的普通牌读入后仍是普通牌
+    // v4 → v5：商店从一条扁平 offers 拆成 jokers / consumables 两个货架（见 migrateShop）
     deck: migrateCards(s.deck),
     hand: migrateCards(s.hand),
     discardPile: migrateCards(s.discardPile),

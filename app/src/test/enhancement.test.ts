@@ -9,7 +9,7 @@ import type { Card, JokerInstance, RunState } from '../core/types';
 
 // ── P2-1 卡牌契约升级与迁移 ──────────────────────────────────────
 
-describe('P2-1 存档版本 4：牌多出增强 / 蜡封字段', () => {
+describe('P2-1 Card 契约：牌多出增强 / 蜡封字段', () => {
   const legacy = () => {
     // v3 存档：牌上只有 id / suit / rank
     const raw = JSON.parse(JSON.stringify(createRun('P2LEGACY'))) as Record<string, unknown>;
@@ -17,14 +17,14 @@ describe('P2-1 存档版本 4：牌多出增强 / 蜡封字段', () => {
     return raw;
   };
 
-  it('版本号 +1', () => {
-    expect(SAVE_VERSION).toBe(4);
+  it('版本号是当前 v5', () => {
+    expect(SAVE_VERSION).toBe(5);
   });
 
   it('v3 的普通牌读入后仍是普通牌，数量不变', () => {
     const raw = legacy();
     const m = migrateSave(raw) as RunState;
-    expect(m.version).toBe(4);
+    expect(m.version).toBe(SAVE_VERSION);
     expect(m.deck).toHaveLength(52);
     expect(m.deck.every((c) => c.enhancement === undefined && c.seal === undefined)).toBe(true);
   });

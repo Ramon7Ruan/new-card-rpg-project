@@ -9,13 +9,17 @@ import {
   rollBoss,
   targetFor,
 } from '../core/blinds';
-import { getConsumable, MAX_CONSUMABLES } from '../core/consumables';
+import { ENHANCEMENT_LABEL } from '../core/cards';
+import { getConsumable } from '../core/consumables';
 import { HAND_LABEL } from '../core/hands';
-import { getJoker, MAX_JOKERS } from '../core/jokers';
+import { getJoker } from '../core/jokers';
+import { getPack, packSlot } from '../core/packs';
+import { getTag } from '../core/tags';
 import { clearRun, loadRun, saveRun } from '../core/persist';
 import { createRun, reducer, type Action } from '../core/run';
 import { scoreHand } from '../core/scoring';
 import { sellValue } from '../core/shop';
+import { getVoucher, voucherEffects } from '../core/vouchers';
 import type { Card, HandType, RunState, ScoreResult } from '../core/types';
 import { CardView } from './CardView';
 import { ConsumableView } from './ConsumableView';
@@ -207,6 +211,8 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
   const playBlocked = required ? state.selected.length !== required : state.selected.length === 0;
   /** 消耗品只在牌桌与商店可用（与 useConsumable 的判定保持一致） */
   const canUseConsumable = state.phase === 'playing' || state.phase === 'shop';
+  /** 槽位数量由优惠券决定，必须从 state 算（买了「小丑背包」立刻多一格） */
+  const fx = useMemo(() => voucherEffects(state.vouchers), [state.vouchers]);
 
   return (
     <div className="app">
@@ -260,7 +266,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
       )}
 
       <section className="joker-row">
-        {Array.from({ length: MAX_JOKERS }).map((_, i) => (
+        {Array.from({ length: fx.jokerSlots }).map((_, i) => (
           <JokerView
             key={state.jokers[i]?.uid ?? `empty-${i}`}
             def={state.jokers[i] ? getJoker(state.jokers[i].defId) : undefined}
@@ -306,6 +312,32 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
               );
             })}
           </div>
+
+          <div className="skip-row">
+            <span className="skip-hint">
+              {state.blindIndex >= 2
+                ? 'Boss 盲注不能跳过'
+                : '跳过这个盲注：不给奖励、不出牌，换 1 个标签'}
+            </span>
+            <button
+              className="btn"
+              disabled={state.blindIndex >= 2}
+              onClick={() => dispatch({ type: 'skipBlind' })}
+            >
+              跳过 · 得标签
+            </button>
+          </div>
+
+          {state.tags.length > 0 && (
+            <div className="tag-row">
+              <span className="row-label">标签</span>
+              {state.tags.map((id, i) => (
+                <span key={`${id}-${i}`} className="tag-chip">
+                  {getTag(id)?.name ?? id}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <div className="table-area">
@@ -434,6 +466,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
           onUseConsumable={startCharm}
         />
       )}
+      {state.pack && <PackPanel state={state} dispatch={dispatch} />}
       {(state.phase === 'won' || state.phase === 'lost') && (
         <div className="overlay">
           <div className="panel">
@@ -569,56 +602,148 @@ function ShopPanel({
   const shop = state.shop;
   if (!shop) return null;
 
-  const jokerFull = state.jokers.length >= MAX_JOKERS;
-  const consumableFull = state.consumables.length >= MAX_CONSUMABLES;
+  // 槽位上限跟着优惠券走，和 reducer 里 buyJoker / buyConsumable 的判定同源
+  const fx = voucherEffects(state.vouchers);
+  const jokerFull = state.jokers.length >= fx.jokerSlots;
+  const consumableFull = state.consumables.length >= fx.consumableSlots;
   const hasOwned = state.jokers.length > 0 || state.consumables.length > 0;
+
+  const voucherOffer = shop.voucher;
+  const voucherDef = voucherOffer ? getVoucher(voucherOffer.defId) : undefined;
+  const voucherPoor = voucherOffer ? state.money < voucherOffer.cost : false;
+  const voucherLabel = !voucherOffer
+    ? ''
+    : voucherOffer.sold
+      ? '已售出'
+      : voucherPoor
+        ? '钱不够'
+        : '购买';
 
   return (
     <div className="overlay">
       <div className="panel panel-shop">
         <h2>商店</h2>
         <p className="sub">
-          {`持有 $${state.money} · 小丑 ${state.jokers.length}/${MAX_JOKERS} · 铭文 ${state.consumables.length}/${MAX_CONSUMABLES}`}
+          {`持有 $${state.money} · 小丑 ${state.jokers.length}/${fx.jokerSlots} · 消耗品 ${state.consumables.length}/${fx.consumableSlots}`}
         </p>
 
-        <div className="shop-grid">
-          {shop.offers.map((o, i) => {
-            const isConsumable = o.kind === 'consumable';
-            const def = isConsumable ? getConsumable(o.defId) : getJoker(o.defId);
-            if (!def) return null;
-
-            const full = isConsumable ? consumableFull : jokerFull;
-            const poor = state.money < o.cost;
-            const label = o.sold ? '已售出' : poor ? '钱不够' : full ? '槽位已满' : '购买';
-
-            return (
-              <div key={`${o.defId}-${i}`} className={`shop-item ${o.sold ? 'is-sold' : ''}`}>
-                <div className="shop-item-head">
-                  <span className="title">{def.name}</span>
-                  <span className={`kind-tag ${isConsumable ? 'is-consumable' : 'is-joker'}`}>
-                    {isConsumable ? '铭文' : '小丑'}
-                  </span>
+        <div className="shop-section">
+          <div className="shop-section-head">
+            <span className="shop-section-title">优惠券</span>
+            <span className="shop-section-hint">买下永久生效 · 每次 1 张</span>
+          </div>
+          {voucherOffer && voucherDef ? (
+            <div className={`voucher-card ${voucherOffer.sold ? 'is-sold' : ''}`}>
+              <div className="voucher-main">
+                <div className="voucher-head">
+                  <span className="title">{voucherDef.name}</span>
+                  <span className="kind-tag is-voucher">优惠券</span>
                 </div>
-                <div className="desc">{def.desc}</div>
-                <div className="buy">
-                  <span>${o.cost}</span>
-                  <button
-                    className="btn"
-                    disabled={o.sold || poor || full}
-                    onClick={() =>
-                      dispatch(
-                        isConsumable
-                          ? { type: 'buyConsumable', index: i }
-                          : { type: 'buyJoker', index: i },
-                      )
-                    }
-                  >
-                    {label}
-                  </button>
-                </div>
+                <div className="desc">{voucherDef.desc}</div>
               </div>
-            );
-          })}
+              <div className="buy">
+                <span>${voucherOffer.cost}</span>
+                <button
+                  className="btn"
+                  disabled={voucherOffer.sold || voucherPoor}
+                  onClick={() => dispatch({ type: 'buyVoucher', index: 0 })}
+                >
+                  {voucherLabel}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="owned-empty">当前底注能买的券都买完了。</p>
+          )}
+          {state.vouchers.length > 0 && (
+            <div className="voucher-owned">
+              {`已生效：${state.vouchers.map((id) => getVoucher(id)?.name ?? id).join(' · ')}`}
+            </div>
+          )}
+        </div>
+
+        <div className="shop-section">
+          <div className="shop-section-head">
+            <span className="shop-section-title">小丑牌</span>
+            <span className="shop-section-hint">独立池 · 每次 3 张</span>
+          </div>
+          <div className="shop-grid is-jokers">
+            {shop.jokers.map((o, i) => {
+              const def = getJoker(o.defId);
+              if (!def) return null;
+              return (
+                <OfferCard
+                  key={`j-${o.defId}-${i}`}
+                  title={def.name}
+                  desc={def.desc}
+                  tag="小丑"
+                  tone="joker"
+                  cost={o.cost}
+                  sold={o.sold}
+                  full={jokerFull}
+                  money={state.money}
+                  onBuy={() => dispatch({ type: 'buyJoker', index: i })}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="shop-section">
+          <div className="shop-section-head">
+            <span className="shop-section-title">星球与符咒</span>
+            <span className="shop-section-hint">共用一个池 · 每次 2 张</span>
+          </div>
+          <div className="shop-grid is-consumables">
+            {shop.consumables.map((o, i) => {
+              const def = getConsumable(o.defId);
+              if (!def) return null;
+              return (
+                <OfferCard
+                  key={`c-${o.defId}-${i}`}
+                  title={def.name}
+                  desc={def.desc}
+                  tag={def.kind === 'planet' ? '星球' : '符咒'}
+                  tone="consumable"
+                  cost={o.cost}
+                  sold={o.sold}
+                  full={consumableFull}
+                  money={state.money}
+                  onBuy={() => dispatch({ type: 'buyConsumable', index: i })}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="shop-section">
+          <div className="shop-section-head">
+            <span className="shop-section-title">补充包</span>
+            <span className="shop-section-hint">开 3 张选 1 张 · 每次 2 个</span>
+          </div>
+          <div className="shop-grid is-packs">
+            {shop.packs.map((o, i) => {
+              const def = getPack(o.defId);
+              if (!def) return null;
+              const slot = packSlot(o.defId);
+              const full =
+                slot === 'joker' ? jokerFull : slot === 'consumable' ? consumableFull : false;
+              return (
+                <OfferCard
+                  key={`p-${o.defId}-${i}`}
+                  title={def.name}
+                  desc={def.desc}
+                  tag="补充包"
+                  tone="pack"
+                  cost={o.cost}
+                  sold={o.sold}
+                  full={full}
+                  money={state.money}
+                  onBuy={() => dispatch({ type: 'buyPack', index: i })}
+                />
+              );
+            })}
+          </div>
         </div>
 
         <div className="owned">
@@ -671,19 +796,123 @@ function ShopPanel({
         <div className="panel-actions">
           <button
             className="btn"
-            disabled={state.money < shop.rerollCost}
+            disabled={state.freeRerolls === 0 && state.money < shop.rerollCost}
             onClick={() => dispatch({ type: 'reroll' })}
           >
-            {`重摇 $${shop.rerollCost}`}
+            {state.freeRerolls > 0 ? '重摇 · 免费' : `重摇 $${shop.rerollCost}`}
           </button>
           <button className="ghost-btn" onClick={onShowLevels}>
             牌型等级
           </button>
           <div className="spacer" />
           <button className="btn btn-primary" onClick={() => dispatch({ type: 'leaveShop' })}>
-            继续下一盲注
+            下一盲注
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** 开包面板：3 选 1，也可以整包跳过 */
+function PackPanel({ state, dispatch }: { state: RunState; dispatch: Dispatch<Action> }) {
+  const pack = state.pack;
+  if (!pack) return null;
+  const def = getPack(pack.packId);
+
+  return (
+    <div className="overlay">
+      <div className="panel panel-pack">
+        <h2>{def?.name ?? '补充包'}</h2>
+        <p className="sub">{`${pack.choices.length} 张里选 1 张 · 也可以整包跳过`}</p>
+
+        <div className="pack-choices">
+          {pack.choices.map((choice, i) => {
+            if (choice.kind === 'card') {
+              const enh = choice.card.enhancement;
+              return (
+                <div key={`c${i}`} className="pack-choice is-card">
+                  <CardView card={choice.card} onClick={() => dispatch({ type: 'pickPack', index: i })} />
+                  <span className="pack-choice-desc">
+                    {enh ? ENHANCEMENT_LABEL[enh] : '普通牌'}
+                  </span>
+                </div>
+              );
+            }
+
+            const isJoker = choice.kind === 'joker';
+            const jokerDef = isJoker ? getJoker(choice.defId) : undefined;
+            const consumableDef = isJoker ? undefined : getConsumable(choice.defId);
+            const title = isJoker ? jokerDef?.name : consumableDef?.name;
+            const desc = isJoker ? jokerDef?.desc : consumableDef?.desc;
+            if (!title) return null;
+
+            return (
+              <button
+                key={`k${i}`}
+                className="pack-choice"
+                onClick={() => dispatch({ type: 'pickPack', index: i })}
+              >
+                <span className="pack-choice-head">
+                  <span className="pack-choice-name">{title}</span>
+                  <span className={`kind-tag ${isJoker ? 'is-joker' : 'is-consumable'}`}>
+                    {isJoker ? '小丑' : consumableDef?.kind === 'planet' ? '星球' : '符咒'}
+                  </span>
+                </span>
+                <span className="pack-choice-desc">{desc}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="panel-actions">
+          <div className="spacer" />
+          <button className="btn" onClick={() => dispatch({ type: 'skipPack' })}>
+            跳过
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 单个货架商品。三个货架共用，避免几处各写一份禁用逻辑。 */
+function OfferCard({
+  title,
+  desc,
+  tag,
+  tone,
+  cost,
+  sold,
+  full,
+  money,
+  onBuy,
+}: {
+  title: string;
+  desc: string;
+  tag: string;
+  tone: 'joker' | 'consumable' | 'pack';
+  cost: number;
+  sold: boolean;
+  full: boolean;
+  money: number;
+  onBuy: () => void;
+}) {
+  const poor = money < cost;
+  const label = sold ? '已售出' : poor ? '钱不够' : full ? '槽位已满' : '购买';
+
+  return (
+    <div className={`shop-item ${sold ? 'is-sold' : ''}`}>
+      <div className="shop-item-head">
+        <span className="title">{title}</span>
+        <span className={`kind-tag is-${tone}`}>{tag}</span>
+      </div>
+      <div className="desc">{desc}</div>
+      <div className="buy">
+        <span>${cost}</span>
+        <button className="btn" disabled={sold || poor || full} onClick={onBuy}>
+          {label}
+        </button>
       </div>
     </div>
   );

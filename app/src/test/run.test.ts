@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { targetFor } from '../core/blinds';
 import { card, sortHand } from '../core/cards';
 import { createRun, HANDS_PER_ROUND, reducer } from '../core/run';
+import { CONSUMABLE_SHELF, JOKER_SHELF } from '../core/shop';
 import type { RunState } from '../core/types';
 
 function startPlaying(seed = 'TESTSEED'): RunState {
@@ -90,7 +91,8 @@ describe('单局状态机', () => {
     s = reducer(s, { type: 'cashOut' });
     expect(s.phase).toBe('shop');
     expect(s.money).toBeGreaterThan(before);
-    expect(s.shop?.offers.length).toBe(2);
+    expect(s.shop?.jokers.length).toBe(JOKER_SHELF);
+    expect(s.shop?.consumables.length).toBe(CONSUMABLE_SHELF);
   });
 
   it('钱不够不能买小丑', () => {
@@ -111,7 +113,7 @@ describe('单局状态机', () => {
     s = reducer(s, { type: 'toggleCard', cardId: s.hand[0].id });
     s = reducer(s, { type: 'playHand' });
     s = reducer(s, { type: 'cashOut' });
-    const cost = s.shop!.offers[0].cost;
+    const cost = s.shop!.jokers[0].cost;
     s = reducer(s, { type: 'buyJoker', index: 0 });
     expect(s.jokers).toHaveLength(1);
     expect(s.money).toBe(100 + 3 + s.handsLeft * 1 + Math.min(Math.floor(100 / 5), 5) - cost);

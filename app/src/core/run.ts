@@ -4,18 +4,28 @@ import { allRunCards } from './charms';
 import { getConsumable, MAX_CONSUMABLES } from './consumables';
 
 import { initialHandLevels } from './hands';
-import { getJoker, MAX_JOKERS } from './jokers';
+import { getJoker } from './jokers';
+import { getPack, openPack, packSlot } from './packs';
 import { makeRng, randomSeed, shuffle } from './rng';
 import { scoreHand } from './scoring';
-import { rollShop, sellValue } from './shop';
+import { rollShop, sellValue, type ShopShelf } from './shop';
+import { applyTag, rollTag } from './tags';
+import { rollVoucher, VOUCHER_BASE, voucherEffects } from './vouchers';
 import type { BlindRule, Card, RunState } from './types';
 
 export const HAND_SIZE = 8;
 export const HANDS_PER_ROUND = 4;
 export const DISCARDS_PER_ROUND = 3;
-export const INTEREST_CAP = 5;
+/** 基础利息上限；「高息存款」优惠券会提高它 */
+export const INTEREST_CAP = VOUCHER_BASE.interestCap;
 /** 存档结构版本。改 RunState 字段时必须 +1，并在 persist.ts 补迁移。 */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
+
+/** 当前货架宽度。P3 起由优惠券加宽，所以必须每次从 state 算而不是读常量。 */
+export function shelfOf(state: RunState): ShopShelf {
+  const fx = voucherEffects(state.vouchers);
+  return { jokers: fx.jokerShelf, consumables: fx.consumableShelf };
+}
 
 /** 生成在数组内唯一的 uid（卖出后再买入也不会撞车） */
 function nextUid(prefix: string, used: { uid: string }[]): string {
@@ -37,6 +47,9 @@ export function createRun(seed: string = randomSeed()): RunState {
     hand: [],
     jokers: [],
     consumables: [],
+    vouchers: [],
+    tags: [],
+    freeRerolls: 0,
     handLevels: initialHandLevels(),
     bossId: null,
     bossRule: null,
@@ -49,6 +62,8 @@ export function createRun(seed: string = randomSeed()): RunState {
     shuffleCount: 0,
     phase: 'blindSelect',
     shop: null,
+    pack: null,
+    packSeq: 0,
     lastScore: null,
     selected: [],
   };
@@ -83,12 +98,17 @@ export type Action =
   | { type: 'newRun'; seed?: string }
   /** bossId 仅供测试/调试显式指定，正常流程由 seed 决定 */
   | { type: 'selectBlind'; bossId?: string }
+  | { type: 'skipBlind' }
   | { type: 'toggleCard'; cardId: string }
   | { type: 'playHand' }
   | { type: 'discard' }
   | { type: 'cashOut' }
   | { type: 'buyJoker'; index: number }
   | { type: 'buyConsumable'; index: number }
+  | { type: 'buyVoucher'; index: number }
+  | { type: 'buyPack'; index: number }
+  | { type: 'pickPack'; index: number }
+  | { type: 'skipPack' }
   | { type: 'useConsumable'; index: number; targetIds?: string[] }
   | { type: 'sellJoker'; index: number }
   | { type: 'sellConsumable'; index: number }
@@ -141,6 +161,32 @@ export function reducer(state: RunState, action: Action): RunState {
         lastScore: null,
       };
       return { ...fresh, ...draw(fresh, handSize) };
+    }
+
+    /**
+     * 跳过盲注：不给盲注奖励、不打出任何牌，只换 1 个标签，然后停在下一次选择页。
+     * Boss 位不能跳过（难度曲线靠它），这一点与 UI 的禁用保持一致。
+     */
+    case 'skipBlind': {
+      if (state.phase !== 'blindSelect') return state;
+      if (state.blindIndex >= 2) return state;
+
+      const nonce = `${state.ante}:${state.blindIndex}`;
+      const tag = rollTag(state.seed, nonce);
+      const patch = applyTag(state, tag, nonce);
+      const blindIndex = state.blindIndex + 1;
+
+      return {
+        ...state,
+        ...patch,
+        blindIndex,
+        target: targetFor(state.ante, blindIndex),
+        bossId: null,
+        bossRule: null,
+        tags: [...state.tags, tag.id],
+        selected: [],
+        lastScore: null,
+      };
     }
 
     case 'toggleCard': {
@@ -233,7 +279,8 @@ export function reducer(state: RunState, action: Action): RunState {
     case 'cashOut': {
       if (state.phase !== 'cashOut') return state;
 
-      const interest = Math.min(Math.floor(state.money / 5), INTEREST_CAP);
+      const fx = voucherEffects(state.vouchers);
+      const interest = Math.min(Math.floor(state.money / 5), fx.interestCap);
       // 鎏金：回合结束时还留在手里的牌，每张 +$3
       const goldBonus = state.hand.filter((c) => c.enhancement === 'gold').length * 3;
       let money =
@@ -248,33 +295,50 @@ export function reducer(state: RunState, action: Action): RunState {
       if (state.blindIndex >= 2 && state.ante >= MAX_ANTE) {
         return { ...state, money, phase: 'won' };
       }
-      return { ...state, money, phase: 'shop', shop: rollShop(state.seed, state.ante * 10 + state.blindIndex) };
+
+      const nonce = state.ante * 10 + state.blindIndex;
+      const shelf = rollShop(state.seed, nonce, shelfOf(state));
+      return {
+        ...state,
+        money,
+        phase: 'shop',
+        shop: {
+          ...shelf,
+          // 基础重摇价由优惠券决定（「常客折扣」）
+          rerollCost: fx.rerollBase,
+          voucher: rollVoucher(state.seed, nonce, state.ante, state.vouchers),
+        },
+      };
     }
 
     case 'buyJoker': {
       if (state.phase !== 'shop' || !state.shop) return state;
-      const offer = state.shop.offers[action.index];
-      if (!offer || offer.sold || offer.kind !== 'joker') return state;
+      if (state.pack) return state;
+      const offer = state.shop.jokers[action.index];
+      if (!offer || offer.sold) return state;
       if (state.money < offer.cost) return state;
-      if (state.jokers.length >= MAX_JOKERS) return state;
+      if (state.jokers.length >= voucherEffects(state.vouchers).jokerSlots) return state;
 
-      const offers = state.shop.offers.map((o, i) => (i === action.index ? { ...o, sold: true } : o));
+      const jokers = state.shop.jokers.map((o, i) => (i === action.index ? { ...o, sold: true } : o));
       return {
         ...state,
         money: state.money - offer.cost,
         jokers: [...state.jokers, { uid: nextUid(offer.defId, state.jokers), defId: offer.defId }],
-        shop: { ...state.shop, offers },
+        shop: { ...state.shop, jokers },
       };
     }
 
     case 'buyConsumable': {
       if (state.phase !== 'shop' || !state.shop) return state;
-      const offer = state.shop.offers[action.index];
-      if (!offer || offer.sold || offer.kind !== 'consumable') return state;
+      if (state.pack) return state;
+      const offer = state.shop.consumables[action.index];
+      if (!offer || offer.sold) return state;
       if (state.money < offer.cost) return state;
-      if (state.consumables.length >= MAX_CONSUMABLES) return state;
+      if (state.consumables.length >= voucherEffects(state.vouchers).consumableSlots) return state;
 
-      const offers = state.shop.offers.map((o, i) => (i === action.index ? { ...o, sold: true } : o));
+      const consumables = state.shop.consumables.map((o, i) =>
+        i === action.index ? { ...o, sold: true } : o,
+      );
       return {
         ...state,
         money: state.money - offer.cost,
@@ -282,8 +346,104 @@ export function reducer(state: RunState, action: Action): RunState {
           ...state.consumables,
           { uid: nextUid(offer.defId, state.consumables), defId: offer.defId },
         ],
-        shop: { ...state.shop, offers },
+        shop: { ...state.shop, consumables },
       };
+    }
+
+    /**
+     * 买优惠券：永久生效、同一张只能买一次。
+     * 效果本身不在这个 case 里直接改字段——统一由 voucherEffects(state.vouchers) 计算，
+     * 所以「买了之后槽位立刻变宽」和「刷新页面后仍然变宽」走的是同一条路径。
+     */
+    case 'buyVoucher': {
+      if (state.phase !== 'shop' || !state.shop) return state;
+      if (state.pack) return state;
+      const offer = state.shop.voucher;
+      if (!offer || offer.sold) return state;
+      if (action.index !== 0) return state;
+      if (state.money < offer.cost) return state;
+      if (state.vouchers.includes(offer.defId)) return state;
+
+      return {
+        ...state,
+        money: state.money - offer.cost,
+        vouchers: [...state.vouchers, offer.defId],
+        shop: { ...state.shop, voucher: { ...offer, sold: true } },
+      };
+    }
+
+    /**
+     * 买补充包。槽位不够时**直接买不了**（UI 会禁用并写「槽位已满」），
+     * 而不是先扣钱、开包时才发现装不下——那样只能把玩家选的牌丢掉。
+     */
+    case 'buyPack': {
+      if (state.phase !== 'shop' || !state.shop) return state;
+      if (state.pack) return state;
+      const offer = state.shop.packs[action.index];
+      if (!offer || offer.sold) return state;
+      const def = getPack(offer.defId);
+      if (!def) return state;
+      if (state.money < offer.cost) return state;
+
+      const fx = voucherEffects(state.vouchers);
+      const slot = packSlot(def.id);
+      if (slot === 'joker' && state.jokers.length >= fx.jokerSlots) return state;
+      if (slot === 'consumable' && state.consumables.length >= fx.consumableSlots) return state;
+
+      // 开包内容的种子要能区分「同一间商店里的第几个包」和「重摇前/后」
+      const nonce = `${state.ante}:${state.blindIndex}:${state.shop.rerolls}:${action.index}`;
+      const packs = state.shop.packs.map((o, i) => (i === action.index ? { ...o, sold: true } : o));
+
+      return {
+        ...state,
+        money: state.money - offer.cost,
+        pack: openPack(state.seed, nonce, def, state.packSeq),
+        packSeq: state.packSeq + 1,
+        shop: { ...state.shop, packs },
+      };
+    }
+
+    /** 从开出来的 3 张里选 1 张；选完包即关闭 */
+    case 'pickPack': {
+      const pack = state.pack;
+      if (!pack) return state;
+      const choice = pack.choices[action.index];
+      if (!choice) return state;
+
+      if (choice.kind === 'joker') {
+        if (state.jokers.length >= voucherEffects(state.vouchers).jokerSlots) return state;
+        return {
+          ...state,
+          pack: null,
+          jokers: [
+            ...state.jokers,
+            { uid: nextUid(choice.defId, state.jokers), defId: choice.defId },
+          ],
+        };
+      }
+
+      if (choice.kind === 'consumable') {
+        if (state.consumables.length >= voucherEffects(state.vouchers).consumableSlots) {
+          return state;
+        }
+        return {
+          ...state,
+          pack: null,
+          consumables: [
+            ...state.consumables,
+            { uid: nextUid(choice.defId, state.consumables), defId: choice.defId },
+          ],
+        };
+      }
+
+      // 标准包：牌直接进牌堆（id 已带 #pack 后缀，不会和原有牌撞）
+      return { ...state, pack: null, deck: [...state.deck, choice.card] };
+    }
+
+    /** 整包跳过：不选任何一张，包作废 */
+    case 'skipPack': {
+      if (!state.pack) return state;
+      return { ...state, pack: null };
     }
 
     /**
@@ -361,19 +521,41 @@ export function reducer(state: RunState, action: Action): RunState {
 
     case 'reroll': {
       if (state.phase !== 'shop' || !state.shop) return state;
-      if (state.money < state.shop.rerollCost) return state;
+      // 包没处理完就不能重摇：重摇会换掉货架，开着的包会变成孤儿
+      if (state.pack) return state;
+
+      // 「会员卡」标签：这一次重摇免费，先扣次数再谈钱
+      const free = state.freeRerolls > 0;
+      if (!free && state.money < state.shop.rerollCost) return state;
 
       const rerolls = state.shop.rerolls + 1;
-      const shop = rollShop(state.seed, state.ante * 100 + state.blindIndex * 10 + rerolls);
+      const shop = rollShop(
+        state.seed,
+        state.ante * 100 + state.blindIndex * 10 + rerolls,
+        shelfOf(state),
+      );
       return {
         ...state,
-        money: state.money - state.shop.rerollCost,
-        shop: { ...shop, rerollCost: state.shop.rerollCost + 1, rerolls },
+        money: free ? state.money : state.money - state.shop.rerollCost,
+        freeRerolls: free ? state.freeRerolls - 1 : state.freeRerolls,
+        // 重摇后券也要重新挂（已经买过的不会重复出现）
+        shop: {
+          ...shop,
+          rerollCost: state.shop.rerollCost + 1,
+          rerolls,
+          voucher: rollVoucher(
+            state.seed,
+            state.ante * 100 + state.blindIndex * 10 + rerolls,
+            state.ante,
+            state.vouchers,
+          ),
+        },
       };
     }
 
     case 'leaveShop': {
       if (state.phase !== 'shop') return state;
+      if (state.pack) return state;
       // 打完 Boss 位则推进到下一底注，否则同底注的下一个盲注
       const bossCleared = state.blindIndex >= 2;
       const ante = bossCleared ? state.ante + 1 : state.ante;

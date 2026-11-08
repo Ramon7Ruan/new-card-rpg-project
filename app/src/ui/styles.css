@@ -707,6 +707,10 @@ button:disabled {
   gap: 12px;
 }
 
+.shop-grid.is-jokers {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .shop-item {
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -715,7 +719,7 @@ button:disabled {
   flex-direction: column;
   gap: 8px;
   background: var(--panel-2);
-  min-height: 132px;
+  min-height: 112px;
 }
 
 .shop-item.is-sold {
@@ -988,11 +992,197 @@ button:disabled {
   transform: translateY(-2px);
 }
 
+/* ── 跳过盲注 + 标签（P3） ── */
+.skip-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* 和盲注卡片同宽并居中：否则宽屏下提示贴左、按钮贴右，读不出是一组 */
+  max-width: 480px;
+  margin: 0 auto;
+  width: 100%;
+  padding-top: 4px;
+}
+
+.skip-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.tag-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 480px;
+  margin: 0 auto;
+  width: 100%;
+  padding-top: 2px;
+}
+
+.tag-chip {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  color: var(--gold);
+  background: rgba(240, 200, 120, 0.12);
+  border: 1px solid rgba(240, 200, 120, 0.25);
+}
+
 /* ── 商店：商品类型与卖出区 ── */
 .panel-shop {
-  max-width: 600px;
+  max-width: 720px;
   max-height: 90vh;
   overflow-y: auto;
+  /* 四个货架叠在一起后要压紧一点，否则 900px 高的屏幕会把底部按钮顶出可视区 */
+  gap: 10px;
+}
+
+/* ── 商店双货架（P3）：小丑 3 位、星球与符咒 2 位 ── */
+.shop-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shop-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.shop-section-title {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--text);
+}
+
+.shop-section-hint {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* 优惠券：横向一张，比货架卡片矮 */
+.voucher-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--gold-dim, var(--line));
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: linear-gradient(90deg, rgba(240, 200, 120, 0.08), var(--panel-2) 60%);
+}
+
+.voucher-card.is-sold {
+  opacity: 0.35;
+}
+
+.voucher-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.voucher-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voucher-card .title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.voucher-card .desc {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.voucher-card .buy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--gold);
+  flex: 0 0 auto;
+}
+
+.kind-tag.is-voucher {
+  color: var(--gold);
+  background: rgba(240, 200, 120, 0.14);
+}
+
+.kind-tag.is-pack {
+  color: #b59cf0;
+  background: rgba(150, 120, 235, 0.16);
+}
+
+/* ── 补充包：开包 3 选 1 ── */
+.panel-pack {
+  max-width: 560px;
+}
+
+.pack-choices {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.pack-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 124px;
+  padding: 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  transition: border-color 0.15s, transform 0.12s;
+}
+
+.pack-choice:hover {
+  border-color: var(--chip);
+  transform: translateY(-2px);
+}
+
+.pack-choice.is-card {
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 8px;
+}
+
+.pack-choice-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.pack-choice-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.pack-choice-desc {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.voucher-owned {
+  font-size: 10px;
+  color: var(--gold);
+  opacity: 0.85;
 }
 
 .shop-item-head {
@@ -1194,5 +1384,15 @@ button:disabled {
 
   .lv-next {
     font-size: 10px;
+  }
+
+  /* 390px 下 3 列会把说明文字挤成竖排，小丑货架降成 2 列（第 3 张另起一行） */
+  .shop-grid.is-jokers {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .shop-item {
+    min-height: 118px;
+    padding: 10px;
   }
 }

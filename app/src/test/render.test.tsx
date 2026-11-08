@@ -121,7 +121,7 @@ describe('渲染冒烟', () => {
     const html = renderToString(<App initialState={s} />);
     expect(html).toContain('商店');
     expect(html).toContain('重摇');
-    expect(html).toContain('继续下一盲注');
+    expect(html).toContain('下一盲注');
   });
 });
 
@@ -133,10 +133,10 @@ function shopState(over: Partial<RunState> = {}): RunState {
     phase: 'shop',
     money: 30,
     shop: {
-      offers: [
-        { defId: 'inscribe-pair', kind: 'consumable', cost: 3, sold: false },
-        { defId: 'fission', kind: 'joker', cost: 6, sold: false },
-      ],
+      jokers: [{ defId: 'fission', cost: 6, sold: false }],
+      consumables: [{ defId: 'inscribe-pair', cost: 3, sold: false }],
+      voucher: null,
+      packs: [],
       rerollCost: 5,
       rerolls: 0,
     },
@@ -170,12 +170,13 @@ describe('消耗品与卖出界面', () => {
     expect(html).toContain('Lv.3');
   });
 
-  it('商店页同时有消耗品位与小丑位，并写明类型', () => {
+  it('商店页两个货架分区展示，并写明类型', () => {
     const html = renderToString(<App initialState={shopState()} />);
     expect(html).toContain('对子铭文');
     expect(html).toContain('裂变');
     expect(html).toContain('kind-tag');
-    expect(html).toContain('铭文 0/2');
+    expect(html).toContain('星球与符咒');
+    expect(html).toContain('消耗品 0/2');
   });
 
   it('商店页有卖出区，价格写在实际按钮上', () => {
@@ -203,5 +204,82 @@ describe('消耗品与卖出界面', () => {
     });
     const html = renderToString(<App initialState={s} />);
     expect(html).toContain('槽位已满');
+  });
+
+  it('商店页有优惠券货位，说明是永久生效', () => {
+    const s = shopState({
+      shop: {
+        jokers: [],
+        consumables: [],
+        voucher: { defId: 'bigger-joker', cost: 10, sold: false },
+        packs: [],
+        rerollCost: 5,
+        rerolls: 0,
+      },
+    });
+    const html = renderToString(<App initialState={s} />);
+    expect(html).toContain('优惠券');
+    expect(html).toContain('小丑背包');
+    expect(html).toContain('永久生效');
+  });
+
+  it('已购优惠券列在商店里，且槽位数量跟着变', () => {
+    const s = shopState({ vouchers: ['bigger-joker'] });
+    const html = renderToString(<App initialState={s} />);
+    expect(html).toContain('已生效：小丑背包');
+    expect(html).toContain('小丑 0/6');
+  });
+
+  it('商店页有补充包货架，槽满时按钮写「槽位已满」', () => {
+    const full = shopState({
+      jokers: ['jester', 'twin', 'prism', 'bronze', 'stone'].map((defId, i) => ({
+        uid: `j${i}`,
+        defId,
+      })),
+    });
+    const s = { ...full, shop: { ...full.shop!, packs: [{ defId: 'pack-joker', cost: 5, sold: false }] } };
+    const html = renderToString(<App initialState={s} />);
+    expect(html).toContain('补充包');
+    expect(html).toContain('小丑包');
+    expect(html).toContain('槽位已满');
+  });
+
+  it('开包面板列出候选并给出跳过入口', () => {
+    const s = shopState({
+      pack: {
+        packId: 'pack-joker',
+        choices: [
+          { kind: 'joker', defId: 'fission' },
+          { kind: 'joker', defId: 'jester' },
+          { kind: 'joker', defId: 'twin' },
+        ],
+      },
+    });
+    const html = renderToString(<App initialState={s} />);
+    expect(html).toContain('小丑包');
+    expect(html).toContain('裂变');
+    expect(html).toContain('选 1 张');
+    expect(html).toContain('跳过');
+  });
+
+  it('盲注选择页有跳过按钮，Boss 位写明不能跳过', () => {
+    const s = createRun('SKIPUI');
+    expect(renderToString(<App initialState={s} />)).toContain('跳过 · 得标签');
+
+    const boss = { ...s, blindIndex: 2 };
+    const html = renderToString(<App initialState={boss} />);
+    expect(html).toContain('Boss 盲注不能跳过');
+  });
+
+  it('已获得的标签在选择页列出来', () => {
+    const s = { ...createRun('SKIPUI2'), tags: ['tag-cash', 'tag-level'] };
+    const html = renderToString(<App initialState={s} />);
+    expect(html).toContain('现钱袋');
+    expect(html).toContain('手记残页');
+  });
+
+  it('有免费重摇时按钮直接写「免费」', () => {
+    const html = renderToString(<App initialState={shopState({ freeRerolls: 1 })} />);
+    expect(html).toContain('重摇 · 免费');
   });
 });

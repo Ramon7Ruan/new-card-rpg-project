@@ -64,12 +64,35 @@ describe('S1 存档版本 3：旧存档迁移', () => {
     expect(Object.values(m?.handLevels ?? {})).toEqual(Array(12).fill(1));
   });
 
-  it('旧商店商品没有 kind，一律按 joker 补', () => {
+  it('旧商店是扁平 offers：迁移后按 kind 拆进两个货架', () => {
     const raw = legacy();
-    raw.shop = { offers: [{ defId: 'jester', cost: 2, sold: false }], rerollCost: 5, rerolls: 0 };
+    raw.shop = {
+      offers: [
+        { defId: 'jester', cost: 2, sold: false },
+        { defId: 'inscribe-pair', kind: 'consumable', cost: 3, sold: true },
+      ],
+      rerollCost: 5,
+      rerolls: 0,
+    };
     const m = migrateSave(raw);
-    expect(m?.shop?.offers[0].kind).toBe('joker');
-    expect(m?.shop?.offers[0].cost).toBe(2);
+    expect(m?.shop?.jokers).toHaveLength(1);
+    expect(m?.shop?.jokers[0].cost).toBe(2);
+    expect(m?.shop?.consumables).toHaveLength(1);
+    expect(m?.shop?.consumables[0].sold).toBe(true);
+  });
+
+  it('货架上 defId 已失效的商品会被丢掉（不留空位）', () => {
+    const raw = legacy();
+    raw.shop = {
+      offers: [
+        { defId: 'jester', cost: 2, sold: false },
+        { defId: 'removed-joker', cost: 4, sold: false },
+      ],
+      rerollCost: 5,
+      rerolls: 0,
+    };
+    const m = migrateSave(raw);
+    expect(m?.shop?.jokers.map((o) => o.defId)).toEqual(['jester']);
   });
 
   it('handLevels 只缺一部分时，缺的补 1、有的保留', () => {
