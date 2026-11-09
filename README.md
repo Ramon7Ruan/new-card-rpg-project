@@ -2,6 +2,8 @@
 
 单人 Roguelike 扑克卡牌游戏。玩法源自扑克牌型 + 筹码×倍率的目标分数闯关，纯前端、无后端、无联网、可离线运行。
 
+**版本 1.0**（核心玩法完成，P0–P5）：50 张小丑、商店双池 + 优惠券 + 补充包、卡牌增强与符咒、8 个底注 / 20 个 Boss / 3 种牌组 / 4 级难度。
+
 **在线试玩**：https://ramon7ruan.github.io/new-card-rpg-project/
 
 push 到 `main` 后由 GitHub Actions 自动构建发布（见 `.github/workflows/deploy.yml`），测试不通过则不部署。
