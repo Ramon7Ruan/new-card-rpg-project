@@ -48,12 +48,12 @@ describe('E2E：6 个 Boss 各自能完整走一手', () => {
   }
 });
 
-describe('E2E：完整一局（2 底注 × 3 盲注）', () => {
-  it('六个盲注顺序正确，最后进入 won', () => {
+describe('E2E：完整一局（3 底注 × 3 盲注）', () => {
+  it('九个盲注顺序正确，最后进入 won', () => {
     let s = createRun('E2E-RUN');
     const visits: string[] = [];
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 9; i++) {
       visits.push(`a${s.ante}b${s.blindIndex}`);
       s = reducer(s, { type: 'selectBlind' });
       expect(s.phase).toBe('playing');
@@ -71,7 +71,17 @@ describe('E2E：完整一局（2 底注 × 3 盲注）', () => {
       if (s.phase === 'shop') s = reducer(s, { type: 'leaveShop' });
     }
 
-    expect(visits).toEqual(['a1b0', 'a1b1', 'a1b2', 'a2b0', 'a2b1', 'a2b2']);
+    expect(visits).toEqual([
+      'a1b0',
+      'a1b1',
+      'a1b2',
+      'a2b0',
+      'a2b1',
+      'a2b2',
+      'a3b0',
+      'a3b1',
+      'a3b2',
+    ]);
     expect(s.phase).toBe('won');
   });
 

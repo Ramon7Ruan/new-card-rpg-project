@@ -288,7 +288,9 @@ export function reducer(state: RunState, action: Action): RunState {
 
       for (const inst of state.jokers) {
         const def = getJoker(inst.defId);
-        if (def?.onRoundEnd) money += def.onRoundEnd({ money, ante: state.ante });
+        if (def?.onRoundEnd) {
+          money += def.onRoundEnd({ money, ante: state.ante, handsLeft: state.handsLeft });
+        }
       }
 
       // 打完最后一个底注的 Boss 才通关
@@ -304,8 +306,8 @@ export function reducer(state: RunState, action: Action): RunState {
         phase: 'shop',
         shop: {
           ...shelf,
-          // 基础重摇价由优惠券决定（「常客折扣」）
-          rerollCost: fx.rerollBase,
+          // 基础重摇价由优惠券决定（「常客折扣」），并随底注上涨（P4）
+          rerollCost: fx.rerollBase + (state.ante - 1),
           voucher: rollVoucher(state.seed, nonce, state.ante, state.vouchers),
         },
       };

@@ -538,7 +538,9 @@ function CashOutPanel({ state, onConfirm }: { state: RunState; onConfirm: () => 
   const goldBonus = goldCards * 3;
   const jokerMoney = state.jokers.reduce((sum, inst) => {
     const def = getJoker(inst.defId);
-    return sum + (def?.onRoundEnd ? def.onRoundEnd({ money: state.money, ante: state.ante }) : 0);
+    return sum + (def?.onRoundEnd
+      ? def.onRoundEnd({ money: state.money, ante: state.ante, handsLeft: state.handsLeft })
+      : 0);
   }, 0);
   const total = state.money + reward + bonus + interest + jokerMoney + goldBonus;
 

@@ -1,7 +1,9 @@
 import type { Card, HandType } from './types';
 
 export interface JokerCtx {
+  /** 本次打出的全部牌（含被 Boss 压制的） */
   played: Card[];
+  /** 真正计分的牌（已剔除被压制的）——按花色/点数做条件时用这个 */
   scoring: Card[];
   handType: HandType;
   money: number;
@@ -15,6 +17,8 @@ export interface JokerMods {
   mult: number;
   /** 乘算倍率，初始 1 */
   xMult: number;
+  /** 计分时直接给的钱（P4）。与金砂蜡封同一条通道，进 ScoreResult.money */
+  money: number;
 }
 
 export interface JokerDef {
@@ -26,7 +30,7 @@ export interface JokerDef {
   /** 计分时按槽位顺序触发 */
   onScored?: (ctx: JokerCtx, mods: JokerMods) => void;
   /** 回合结算时改变金钱，返回增量 */
-  onRoundEnd?: (ctx: { money: number; ante: number }) => number;
+  onRoundEnd?: (ctx: { money: number; ante: number; handsLeft: number }) => number;
 }
 
 const CONTAINS_PAIR: HandType[] = [
@@ -237,6 +241,340 @@ export const JOKERS: JokerDef[] = [
     cost: 4,
     rarity: 'uncommon',
     onRoundEnd: (ctx) => (ctx.money >= 20 ? 3 : 0),
+  },
+
+  // ══════════════════════════════════════════════════════════
+  // P4 新增 32 张：四类各 8 张，全部带条件（不做纯常数）
+  // 统计口径见 test/jokerPool.test.ts：用两套截然不同的 ctx 跑同一张牌，
+  // 若结果完全一致就算「纯常数」，总数必须 ≤ 10。
+  // ══════════════════════════════════════════════════════════
+
+  // ── 花色流 8 ──
+  {
+    id: 'heart-tithe',
+    name: '红心税',
+    desc: '每张计分的红心 +4 倍率',
+    cost: 5,
+    rarity: 'uncommon',
+    onScored: (ctx, m) => {
+      m.mult += 4 * ctx.scoring.filter((c) => c.suit === 'heart').length;
+    },
+  },
+  {
+    id: 'club-chain',
+    name: '梅花链',
+    desc: '计分牌里有 3 张以上梅花时 +60 筹码',
+    cost: 4,
+    rarity: 'common',
+    onScored: (ctx, m) => {
+      if (ctx.scoring.filter((c) => c.suit === 'club').length >= 3) m.chips += 60;
+    },
+  },
+  {
+    id: 'diamond-edge',
+    name: '方块刃',
+    desc: '每张计分的方块 +25 筹码',
+    cost: 4,
+    rarity: 'common',
+    onScored: (ctx, m) => {
+      m.chips += 25 * ctx.scoring.filter((c) => c.suit === 'diamond').length;
+    },
+  },
+  {
+    id: 'spade-crown',
+    name: '黑桃冠',
+    desc: '计分牌里有黑桃 K 时 ×1.5 倍率',
+    cost: 7,
+    rarity: 'rare',
+    onScored: (ctx, m) => {
+      if (ctx.scoring.some((c) => c.suit === 'spade' && c.rank === 13)) m.xMult *= 1.5;
+    },
+  },
+  {
+    id: 'suit-sweep',
+    name: '四色齐',
+    desc: '四种花色都出现时 +$3',
+    cost: 6,
+    rarity: 'uncommon',
+    onScored: (ctx, m) => {
+      if (new Set(ctx.scoring.map((c) => c.suit)).size === 4) m.money += 3;
+    },
+  },
+  {
+    id: 'mono-five',
+    name: '单色五',
+    desc: '恰好 5 张且同花色时 ×2 倍率',
+    cost: 8,
+    rarity: 'rare',
+    onScored: (ctx, m) => {
+      if (ctx.scoring.length === 5 && new Set(ctx.scoring.map((c) => c.suit)).size === 1) {
+        m.xMult *= 2;
+      }
+    },
+  },
+  {
+    id: 'wild-love',
+    name: '幻形恋',
+    desc: '每张计分的幻形牌 +10 倍率',
+    cost: 6,
+    rarity: 'uncommon',
+    onScored: (ctx, m) => {
+      m.mult += 10 * ctx.scoring.filter((c) => c.enhancement === 'wild').length;
+    },
+  },
+  {
+    id: 'red-swell',
+    name: '红潮',
+    desc: '红桃与方块合计 3 张以上时 +45 筹码',
+    cost: 4,
+    rarity: 'common',
+    onScored: (ctx, m) => {
+      const red = ctx.scoring.filter((c) => c.suit === 'heart' || c.suit === 'diamond').length;
+      if (red >= 3) m.chips += 45;
+    },
+  },
+
+  // ── 点数与人头 8 ──
+  {
+    id: 'even-stack',
+    name: '偶数堆',
+    desc: '每张计分的偶数点 +8 筹码',
+    cost: 4,
+    rarity: 'common',
+    onScored: (ctx, m) => {
+      m.chips += 8 * ctx.scoring.filter((c) => c.rank % 2 === 0).length;
+    },
+  },
+  {
+    id: 'odd-stack',
+    name: '奇数堆',
+    desc: '每张计分的奇数点 +4 倍率（A 算 1）',
+    cost: 5,
+    rarity: 'common',
+    onScored: (ctx, m) => {
+      m.mult += 4 * ctx.scoring.filter((c) => c.rank % 2 === 1).length;
+    },
+  },
+  {
+    id: 'high-ranks',
+    name: '大牌压',
+    desc: '每张计分的 10 / J / Q / K / A +12 筹码',
+    cost: 4,
+    rarity: 'common',
+    onScored: (ctx, m) => {
+      m.chips += 12 * ctx.scoring.filter((c) => c.rank >= 10).length;
+    },
+  },
+  {
+    id: 'low-ranks',
+    name: '小牌撬',
+    desc: '每张计分的 2–5 点 +5 倍率',
+    cost: 5,
+    rarity: 'uncommon',
+    onScored: (ctx, m) => {
+      m.mult += 5 * ctx.scoring.filter((c) => c.rank <= 5).length;
+    },
+  },
+  {
+    id: 'court-bounty',
+    name: '人头赏',
+    desc: '每张计分的 J / Q / K +$1',
+    cost: 6,
+    rarity: 'uncommon',
+    onScored: (ctx, m) => {
+      m.money += ctx.scoring.filter((c) => c.rank >= 11 && c.rank <= 13).length;
+    },
+  },
+  {
+    id: 'king-tower',
+    name: '王塔',
+    desc: '每张计分的 K ×1.5 倍率',
+    cost: 7,
+    rarity: 'rare',
+    onScored: (ctx, m) => {
+      const kings = ctx.scoring.filter((c) => c.rank === 13).length;
+      for (let i = 0; i < kings; i++) m.xMult *= 1.5;
+    },
+  },
+  {
+    id: 'queen-garden',
+    name: '后园',
+    desc: '每张计分的 Q +6 倍率',
+    cost: 5,
+    rarity: 'uncommon',
+    onScored: (ctx, m) => {
+      m.mult += 6 * ctx.scoring.filter((c) => c.rank === 12).length;
+    },
+  },
+  {
+    id: 'ace-anchor',
+    name: '王牌锚',
+    desc: '每张计分的 A +25 筹码、+2 倍率',
+    cost: 6,
+    rarity: 'uncommon',
+    onScored: (ctx, m) => {
+      const aces = ctx.scoring.filter((c) => c.rank === 14).length;
+      m.chips += 25 * aces;
+      m.mult += 2 * aces;
+    },
+  },
+
+  // ── 经济流 8 ──
+  {
+    id: 'spade-bounty',
+    name: '黑桃赏',
+    desc: '每张计分的黑桃 +$1',
+    cost: 4,
+    rarity: 'common',
+    onScored: (ctx, m) => {
+      m.money += ctx.scoring.filter((c) => c.suit === 'spade').length;
+    },
+  },
+  {
+    id: 'gild-keeper',
+    name: '镀金匠',
+    desc: '计分牌里有金砂蜡封时 +$3',
+    cost: 6,
+    rarity: 'uncommon',
+    onScored: (ctx, m) => {
+      if (ctx.scoring.some((c) => c.seal === 'gold')) m.money += 3;
+    },
+  },
+  {
+    id: 'pauper',
+    name: '穷汉',
+    desc: '资金 ≤ $5 时 +18 倍率',
+    cost: 5,
+    rarity: 'uncommon',
+    onScored: (ctx, m) => {
+      if (ctx.money <= 5) m.mult += 18;
+    },
+  },
+  {
+    id: 'rich-tax',
+    name: '富税',
+    desc: '资金 ≥ $25 时 ×2 倍率',
+    cost: 8,
+    rarity: 'rare',
+    onScored: (ctx, m) => {
+      if (ctx.money >= 25) m.xMult *= 2;
+    },
+  },
+  {
+    id: 'frugal-purse',
+    name: '铁钱包',
+    desc: '本回合还没弃过牌时 +$2',
+    cost: 4,
+    rarity: 'common',
+    onScored: (ctx, m) => {
+      if (ctx.discardsUsed === 0) m.money += 2;
+    },
+  },
+  {
+    id: 'scavenger',
+    name: '拾荒',
+    desc: '回合结束每剩 1 次出牌 +$1',
+    cost: 6,
+    rarity: 'uncommon',
+    onRoundEnd: (ctx) => ctx.handsLeft,
+  },
+  {
+    id: 'miser',
+    name: '守财',
+    desc: '回合结束若资金 ≥ $10，+$2',
+    cost: 4,
+    rarity: 'common',
+    onRoundEnd: (ctx) => (ctx.money >= 10 ? 2 : 0),
+  },
+  {
+    id: 'ante-stipend',
+    name: '底注津贴',
+    desc: '回合结束 +$1；底注 ≥ 3 时改为 +$3',
+    cost: 5,
+    rarity: 'common',
+    onRoundEnd: (ctx) => (ctx.ante >= 3 ? 3 : 1),
+  },
+
+  // ── 节奏流 8（弃牌与剩余出牌） ──
+  {
+    id: 'dump-truck',
+    name: '弃牌车',
+    desc: '本回合已弃 2 次以上时 +40 筹码',
+    cost: 5,
+    rarity: 'uncommon',
+    onScored: (ctx, m) => {
+      if (ctx.discardsUsed >= 2) m.chips += 40;
+    },
+  },
+  {
+    id: 'last-hand',
+    name: '背水',
+    desc: '只剩 1 次出牌时 ×2 倍率',
+    cost: 8,
+    rarity: 'rare',
+    onScored: (ctx, m) => {
+      if (ctx.handsLeft <= 1) m.xMult *= 2;
+    },
+  },
+  {
+    id: 'opening',
+    name: '先手',
+    desc: '本回合一次牌都没出过（剩 4 次）时 +10 倍率',
+    cost: 4,
+    rarity: 'common',
+    onScored: (ctx, m) => {
+      if (ctx.handsLeft >= 4) m.mult += 10;
+    },
+  },
+  {
+    id: 'frugal',
+    name: '不弃',
+    desc: '本回合没弃过牌时 ×1.5 倍率',
+    cost: 7,
+    rarity: 'rare',
+    onScored: (ctx, m) => {
+      if (ctx.discardsUsed === 0) m.xMult *= 1.5;
+    },
+  },
+  {
+    id: 'dump-chips',
+    name: '弃换筹',
+    desc: '本回合每弃 1 次 +20 筹码',
+    cost: 4,
+    rarity: 'common',
+    onScored: (ctx, m) => {
+      m.chips += 20 * ctx.discardsUsed;
+    },
+  },
+  {
+    id: 'triple',
+    name: '三张流',
+    desc: '恰好打出 3 张时 +12 倍率',
+    cost: 4,
+    rarity: 'common',
+    onScored: (ctx, m) => {
+      if (ctx.played.length === 3) m.mult += 12;
+    },
+  },
+  {
+    id: 'duo',
+    name: '两张牌',
+    desc: '恰好打出 2 张时 +8 倍率',
+    cost: 3,
+    rarity: 'common',
+    onScored: (ctx, m) => {
+      if (ctx.played.length === 2) m.mult += 8;
+    },
+  },
+  {
+    id: 'quad',
+    name: '四张牌',
+    desc: '恰好打出 4 张时 ×1.5 倍率',
+    cost: 5,
+    rarity: 'uncommon',
+    onScored: (ctx, m) => {
+      if (ctx.played.length === 4) m.xMult *= 1.5;
+    },
   },
 ];
 

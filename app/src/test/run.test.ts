@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { targetFor } from '../core/blinds';
+import { MAX_ANTE } from '../core/blinds';
 import { card, sortHand } from '../core/cards';
 import { createRun, HANDS_PER_ROUND, reducer } from '../core/run';
 import { CONSUMABLE_SHELF, JOKER_SHELF } from '../core/shop';
@@ -11,9 +12,13 @@ function startPlaying(seed = 'TESTSEED'): RunState {
   return s;
 }
 
-/** 一路推进到「打完本盲注并收完款」，返回 shop 态 */
+/**
+ * 一路推进到「打完本盲注并收完款」，返回 shop 态。
+ * 这里关心的是底注/盲注的推进顺序，所以**清掉 Boss 规则**——否则抽到「铁律」
+ * 时只出 1 张牌会被拒绝，测试就变成在验 Boss 而不是验推进。
+ */
 function finishRound(s: RunState): RunState {
-  let t: RunState = { ...s, target: 1, phase: 'playing' };
+  let t: RunState = { ...s, target: 1, phase: 'playing', bossRule: null, handSize: 8 };
   t = reducer(t, { type: 'toggleCard', cardId: t.hand[0].id });
   t = reducer(t, { type: 'playHand' });
   return reducer(t, { type: 'cashOut' });
@@ -137,10 +142,10 @@ describe('单局状态机', () => {
     const seen: string[] = [];
     let s = startPlaying();
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 9; i++) {
       seen.push(`a${s.ante}b${s.blindIndex}=${s.target}`);
       s = reducer(finishRound(s), { type: 'leaveShop' });
-      if (i < 5) s = reducer(s, { type: 'selectBlind' });
+      if (i < 8) s = reducer(s, { type: 'selectBlind' });
     }
 
     expect(seen).toEqual([
@@ -150,14 +155,18 @@ describe('单局状态机', () => {
       'a2b0=800',
       'a2b1=1200',
       'a2b2=1600',
+      'a3b0=2000',
+      'a3b1=2800',
+      'a3b2=3600',
     ]);
     // 最后一个底注的 Boss 打完即通关，不再进商店
     expect(s.phase).toBe('won');
   });
 
   it('底注与盲注越界时 targetFor 取最后一个底注的值', () => {
-    expect(targetFor(3, 0)).toBe(800);
-    expect(targetFor(99, 2)).toBe(1600);
+    expect(targetFor(3, 0)).toBe(2000);
+    expect(targetFor(99, 2)).toBe(3600);
+    expect(targetFor(0, 0)).toBe(300);
   });
 
   it('上一手的得分不带到下一个盲注', () => {
@@ -166,6 +175,46 @@ describe('单局状态机', () => {
     s = reducer(s, { type: 'leaveShop' });
     expect(s.lastScore).toBeNull();
     expect(s.roundScore).toBe(0);
+  });
+});
+
+describe('P4 关卡规模：3 个底注 / 9 个盲注', () => {
+  it('MAX_ANTE 是 3', () => {
+    expect(MAX_ANTE).toBe(3);
+  });
+
+  it('重摇基础价随底注 +$1（$5 / $6 / $7）', () => {
+    const cases: [number, number][] = [
+      [1, 5],
+      [2, 6],
+      [3, 7],
+    ];
+    for (const [ante, cost] of cases) {
+      const s: RunState = {
+        ...createRun('REROLLANTE'),
+        phase: 'cashOut',
+        ante,
+        blindIndex: 0,
+        handsLeft: 0,
+        money: 10,
+        hand: [],
+      };
+      expect(reducer(s, { type: 'cashOut' }).shop!.rerollCost).toBe(cost);
+    }
+  });
+
+  it('底注 3 的 Boss 打完才通关，底注 2 打完还要继续', () => {
+    const at = (ante: number): RunState => ({
+      ...createRun('WINCHECK'),
+      phase: 'cashOut',
+      ante,
+      blindIndex: 2,
+      handsLeft: 0,
+      money: 10,
+      hand: [],
+    });
+    expect(reducer(at(2), { type: 'cashOut' }).phase).toBe('shop');
+    expect(reducer(at(3), { type: 'cashOut' }).phase).toBe('won');
   });
 });
 

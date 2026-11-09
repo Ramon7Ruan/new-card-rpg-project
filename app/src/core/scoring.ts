@@ -174,14 +174,15 @@ export function scoreHand(input: ScoreInput): ScoreResult {
     const def = getJoker(inst.defId);
     if (!def?.onScored) continue;
 
-    const mods = { chips: 0, mult: 0, xMult: 1 };
+    const mods = { chips: 0, mult: 0, xMult: 1, money: 0 };
     def.onScored(ctx, mods);
 
-    if (mods.chips === 0 && mods.mult === 0 && mods.xMult === 1) continue;
+    if (mods.chips === 0 && mods.mult === 0 && mods.xMult === 1 && mods.money === 0) continue;
 
     const multBefore = mult;
     chips += mods.chips;
     mult = round2((mult + mods.mult) * mods.xMult);
+    money += mods.money;
 
     events.push({
       kind: 'joker',
