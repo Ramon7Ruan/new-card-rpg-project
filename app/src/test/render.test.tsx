@@ -186,7 +186,7 @@ describe('消耗品与卖出界面', () => {
     });
     const html = renderToString(<App initialState={s} />);
     expect(html).toContain('owned');
-    expect(html).toContain('卖出 $3'); // fission 原价 6 → 3
+    expect(html).toContain('卖出 $2'); // fission 原价 5 → 2
     expect(html).toContain('卖出 $1'); // 铭文原价 3 → 1
   });
 

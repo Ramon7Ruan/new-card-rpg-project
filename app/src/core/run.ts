@@ -1,5 +1,12 @@
-import { MAX_ANTE, resolveBoss, rewardFor, targetFor } from './blinds';
-import { createDeck, sortHand } from './cards';
+import { resolveBoss, rewardFor, targetFor } from './blinds';
+import { sortHand } from './cards';
+import { buildDeck, DEFAULT_DECK, type DeckId } from './decks';
+import {
+  antesFor,
+  DEFAULT_DIFFICULTY,
+  scaledTarget,
+  type DifficultyId,
+} from './difficulty';
 import { allRunCards } from './charms';
 import { getConsumable, MAX_CONSUMABLES } from './consumables';
 
@@ -19,7 +26,7 @@ export const DISCARDS_PER_ROUND = 3;
 /** 基础利息上限；「高息存款」优惠券会提高它 */
 export const INTEREST_CAP = VOUCHER_BASE.interestCap;
 /** 存档结构版本。改 RunState 字段时必须 +1，并在 persist.ts 补迁移。 */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 7;
 
 /** 当前货架宽度。P3 起由优惠券加宽，所以必须每次从 state 算而不是读常量。 */
 export function shelfOf(state: RunState): ShopShelf {
@@ -34,11 +41,18 @@ function nextUid(prefix: string, used: { uid: string }[]): string {
   return `${prefix}-${n}`;
 }
 
-export function createRun(seed: string = randomSeed()): RunState {
-  const deck = shuffle(createDeck(), makeRng(seed, 'deck'));
+export function createRun(
+  seed: string = randomSeed(),
+  deckId: DeckId = DEFAULT_DECK,
+  difficulty: DifficultyId = DEFAULT_DIFFICULTY,
+): RunState {
+  const deck = shuffle(buildDeck(deckId), makeRng(seed, 'deck'));
   return {
     version: SAVE_VERSION,
     seed,
+    deckId,
+    difficulty,
+    maxAnte: antesFor(difficulty),
     ante: 1,
     blindIndex: 0,
     money: 4,
@@ -95,7 +109,7 @@ function draw(
 }
 
 export type Action =
-  | { type: 'newRun'; seed?: string }
+  | { type: 'newRun'; seed?: string; deckId?: DeckId; difficulty?: DifficultyId }
   /** bossId 仅供测试/调试显式指定，正常流程由 seed 决定 */
   | { type: 'selectBlind'; bossId?: string }
   | { type: 'skipBlind' }
@@ -119,7 +133,7 @@ export type Action =
 export function reducer(state: RunState, action: Action): RunState {
   switch (action.type) {
     case 'newRun':
-      return createRun(action.seed);
+      return createRun(action.seed, action.deckId, action.difficulty);
 
     case 'loadState':
       return action.state;
@@ -137,11 +151,19 @@ export function reducer(state: RunState, action: Action): RunState {
         bossRule = resolved.rule;
       }
 
-      const target = Math.round(
-        targetFor(state.ante, state.blindIndex) * (bossRule?.targetMultiplier ?? 1),
+      // 目标 = 基础表 × Boss 系数 × 难度系数；界面预览调同一个函数
+      const target = scaledTarget(
+        targetFor(state.ante, state.blindIndex),
+        state.blindIndex,
+        state.difficulty,
+        bossRule?.targetMultiplier ?? 1,
       );
       const handSize = Math.max(1, HAND_SIZE + (bossRule?.handSizeDelta ?? 0));
-      const discardsLeft = bossRule?.forbidDiscards ? 0 : DISCARDS_PER_ROUND;
+      // 出牌/弃牌次数也走规则表：Boss 只能通过这些字段影响回合，不在 playHand 里写特判
+      const handsLeft = Math.max(1, HANDS_PER_ROUND + (bossRule?.handsDelta ?? 0));
+      const discardsLeft = bossRule?.forbidDiscards
+        ? 0
+        : Math.max(0, DISCARDS_PER_ROUND + (bossRule?.discardsDelta ?? 0));
 
       const recycled: Card[] = [...state.discardPile, ...state.hand];
       const fresh: RunState = {
@@ -151,7 +173,7 @@ export function reducer(state: RunState, action: Action): RunState {
         bossRule,
         handSize,
         target,
-        handsLeft: HANDS_PER_ROUND,
+        handsLeft,
         discardsLeft,
         discardsUsed: 0,
         roundScore: 0,
@@ -294,7 +316,7 @@ export function reducer(state: RunState, action: Action): RunState {
       }
 
       // 打完最后一个底注的 Boss 才通关
-      if (state.blindIndex >= 2 && state.ante >= MAX_ANTE) {
+      if (state.blindIndex >= 2 && state.ante >= state.maxAnte) {
         return { ...state, money, phase: 'won' };
       }
 

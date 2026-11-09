@@ -992,6 +992,119 @@ button:disabled {
   transform: translateY(-2px);
 }
 
+/* ── 新的一局：牌组 + 难度（P5） ── */
+.newrun-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.newrun-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.newrun-summary {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.deck-card.is-active,
+.diff-card.is-active {
+  border-color: var(--gold);
+  background: rgba(240, 200, 120, 0.08);
+}
+
+.diff-list {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.diff-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 8px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-2);
+  transition: border-color 0.15s;
+}
+
+.diff-card:hover {
+  border-color: var(--chip);
+}
+
+.diff-name {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.diff-antes {
+  font-size: 10px;
+  color: var(--gold);
+}
+
+.diff-desc {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.deck-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.deck-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  transition: border-color 0.15s, transform 0.12s;
+}
+
+.deck-card:hover {
+  border-color: var(--chip);
+  transform: translateY(-1px);
+}
+
+.deck-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.deck-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.deck-count {
+  font-size: 10px;
+  color: var(--gold);
+}
+
+.deck-desc {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 /* ── 跳过盲注 + 标签（P3） ── */
 .skip-row {
   display: flex;
@@ -1388,6 +1501,11 @@ button:disabled {
 
   /* 390px 下 3 列会把说明文字挤成竖排，小丑货架降成 2 列（第 3 张另起一行） */
   .shop-grid.is-jokers {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* 难度四档在手机上排 2×2 */
+  .diff-list {
     grid-template-columns: repeat(2, 1fr);
   }
 

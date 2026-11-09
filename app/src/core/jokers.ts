@@ -48,8 +48,11 @@ const IS_FLUSH: HandType[] = ['flush', 'straightFlush', 'flushHouse', 'flushFive
 const IS_STRAIGHT: HandType[] = ['straight', 'straightFlush'];
 
 /**
- * 18 张小丑，覆盖 6 类机制。
+ * 50 张小丑，覆盖 6 类机制。
  * 名字与文案均为自拟，未沿用原版措辞。
+ *
+ * 定价（2026-11-09 调整）：整体下调 $1、最低 $2，稀有度之间的相对价差保持不变。
+ * 目的不是平衡，而是测试期能多买几张看看组合效果。
  */
 export const JOKERS: JokerDef[] = [
   // ── 静态筹码 ──
@@ -57,7 +60,7 @@ export const JOKERS: JokerDef[] = [
     id: 'bronze',
     name: '铜块',
     desc: '+50 筹码',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onScored: (_ctx, m) => {
       m.chips += 50;
@@ -67,7 +70,7 @@ export const JOKERS: JokerDef[] = [
     id: 'stone',
     name: '石块',
     desc: '+30 筹码',
-    cost: 3,
+    cost: 2,
     rarity: 'common',
     onScored: (_ctx, m) => {
       m.chips += 30;
@@ -77,7 +80,7 @@ export const JOKERS: JokerDef[] = [
     id: 'block',
     name: '积木',
     desc: '每张打出的牌 +8 筹码',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onScored: (ctx, m) => {
       m.chips += 8 * ctx.played.length;
@@ -99,7 +102,7 @@ export const JOKERS: JokerDef[] = [
     id: 'twin',
     name: '双子',
     desc: '+6 倍率',
-    cost: 3,
+    cost: 2,
     rarity: 'common',
     onScored: (_ctx, m) => {
       m.mult += 6;
@@ -111,7 +114,7 @@ export const JOKERS: JokerDef[] = [
     id: 'solo',
     name: '独行',
     desc: '只打出 1 张牌时 +20 倍率',
-    cost: 5,
+    cost: 4,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       if (ctx.played.length === 1) m.mult += 20;
@@ -121,7 +124,7 @@ export const JOKERS: JokerDef[] = [
     id: 'pairfan',
     name: '对子迷',
     desc: '打出含对子的牌型时 +8 倍率',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onScored: (ctx, m) => {
       if (CONTAINS_PAIR.includes(ctx.handType)) m.mult += 8;
@@ -131,7 +134,7 @@ export const JOKERS: JokerDef[] = [
     id: 'flushfaith',
     name: '同花信',
     desc: '打出同花时 +15 倍率',
-    cost: 5,
+    cost: 4,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       if (IS_FLUSH.includes(ctx.handType)) m.mult += 15;
@@ -143,7 +146,7 @@ export const JOKERS: JokerDef[] = [
     id: 'prism',
     name: '棱镜',
     desc: '×3 倍率',
-    cost: 8,
+    cost: 7,
     rarity: 'rare',
     onScored: (_ctx, m) => {
       m.xMult *= 3;
@@ -153,7 +156,7 @@ export const JOKERS: JokerDef[] = [
     id: 'fission',
     name: '裂变',
     desc: '×2 倍率',
-    cost: 6,
+    cost: 5,
     rarity: 'uncommon',
     onScored: (_ctx, m) => {
       m.xMult *= 2;
@@ -163,7 +166,7 @@ export const JOKERS: JokerDef[] = [
     id: 'extremist',
     name: '极端',
     desc: '恰好打出 5 张牌时 ×2 倍率',
-    cost: 7,
+    cost: 6,
     rarity: 'rare',
     onScored: (ctx, m) => {
       if (ctx.played.length === 5) m.xMult *= 2;
@@ -175,7 +178,7 @@ export const JOKERS: JokerDef[] = [
     id: 'smith',
     name: '顺子匠',
     desc: '打出顺子时 +30 筹码 +10 倍率',
-    cost: 5,
+    cost: 4,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       if (IS_STRAIGHT.includes(ctx.handType)) {
@@ -188,7 +191,7 @@ export const JOKERS: JokerDef[] = [
     id: 'faceup',
     name: '面朝上',
     desc: '每张打出的 J/Q/K +3 倍率',
-    cost: 5,
+    cost: 4,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       m.mult += 3 * ctx.played.filter((c) => c.rank >= 11 && c.rank <= 13).length;
@@ -198,7 +201,7 @@ export const JOKERS: JokerDef[] = [
     id: 'spadelaw',
     name: '黑桃法',
     desc: '每张打出的黑桃 +15 筹码',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onScored: (ctx, m) => {
       m.chips += 15 * ctx.played.filter((c) => c.suit === 'spade').length;
@@ -210,7 +213,7 @@ export const JOKERS: JokerDef[] = [
     id: 'piggy',
     name: '存钱罐',
     desc: '回合结束 +$2',
-    cost: 5,
+    cost: 4,
     rarity: 'common',
     onRoundEnd: () => 2,
   },
@@ -218,7 +221,7 @@ export const JOKERS: JokerDef[] = [
     id: 'discarder',
     name: '弃牌客',
     desc: '本回合每弃 1 次 +4 倍率',
-    cost: 5,
+    cost: 4,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       m.mult += 4 * ctx.discardsUsed;
@@ -228,7 +231,7 @@ export const JOKERS: JokerDef[] = [
     id: 'emptyhand',
     name: '空手',
     desc: '本回合每剩 1 次出牌 +5 倍率',
-    cost: 6,
+    cost: 5,
     rarity: 'rare',
     onScored: (ctx, m) => {
       m.mult += 5 * ctx.handsLeft;
@@ -238,7 +241,7 @@ export const JOKERS: JokerDef[] = [
     id: 'interestnote',
     name: '利息票据',
     desc: '回合结束若持有 ≥ $20，+$3',
-    cost: 4,
+    cost: 3,
     rarity: 'uncommon',
     onRoundEnd: (ctx) => (ctx.money >= 20 ? 3 : 0),
   },
@@ -254,7 +257,7 @@ export const JOKERS: JokerDef[] = [
     id: 'heart-tithe',
     name: '红心税',
     desc: '每张计分的红心 +4 倍率',
-    cost: 5,
+    cost: 4,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       m.mult += 4 * ctx.scoring.filter((c) => c.suit === 'heart').length;
@@ -264,7 +267,7 @@ export const JOKERS: JokerDef[] = [
     id: 'club-chain',
     name: '梅花链',
     desc: '计分牌里有 3 张以上梅花时 +60 筹码',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onScored: (ctx, m) => {
       if (ctx.scoring.filter((c) => c.suit === 'club').length >= 3) m.chips += 60;
@@ -274,7 +277,7 @@ export const JOKERS: JokerDef[] = [
     id: 'diamond-edge',
     name: '方块刃',
     desc: '每张计分的方块 +25 筹码',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onScored: (ctx, m) => {
       m.chips += 25 * ctx.scoring.filter((c) => c.suit === 'diamond').length;
@@ -284,7 +287,7 @@ export const JOKERS: JokerDef[] = [
     id: 'spade-crown',
     name: '黑桃冠',
     desc: '计分牌里有黑桃 K 时 ×1.5 倍率',
-    cost: 7,
+    cost: 6,
     rarity: 'rare',
     onScored: (ctx, m) => {
       if (ctx.scoring.some((c) => c.suit === 'spade' && c.rank === 13)) m.xMult *= 1.5;
@@ -294,7 +297,7 @@ export const JOKERS: JokerDef[] = [
     id: 'suit-sweep',
     name: '四色齐',
     desc: '四种花色都出现时 +$3',
-    cost: 6,
+    cost: 5,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       if (new Set(ctx.scoring.map((c) => c.suit)).size === 4) m.money += 3;
@@ -304,7 +307,7 @@ export const JOKERS: JokerDef[] = [
     id: 'mono-five',
     name: '单色五',
     desc: '恰好 5 张且同花色时 ×2 倍率',
-    cost: 8,
+    cost: 7,
     rarity: 'rare',
     onScored: (ctx, m) => {
       if (ctx.scoring.length === 5 && new Set(ctx.scoring.map((c) => c.suit)).size === 1) {
@@ -316,7 +319,7 @@ export const JOKERS: JokerDef[] = [
     id: 'wild-love',
     name: '幻形恋',
     desc: '每张计分的幻形牌 +10 倍率',
-    cost: 6,
+    cost: 5,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       m.mult += 10 * ctx.scoring.filter((c) => c.enhancement === 'wild').length;
@@ -326,7 +329,7 @@ export const JOKERS: JokerDef[] = [
     id: 'red-swell',
     name: '红潮',
     desc: '红桃与方块合计 3 张以上时 +45 筹码',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onScored: (ctx, m) => {
       const red = ctx.scoring.filter((c) => c.suit === 'heart' || c.suit === 'diamond').length;
@@ -339,7 +342,7 @@ export const JOKERS: JokerDef[] = [
     id: 'even-stack',
     name: '偶数堆',
     desc: '每张计分的偶数点 +8 筹码',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onScored: (ctx, m) => {
       m.chips += 8 * ctx.scoring.filter((c) => c.rank % 2 === 0).length;
@@ -349,7 +352,7 @@ export const JOKERS: JokerDef[] = [
     id: 'odd-stack',
     name: '奇数堆',
     desc: '每张计分的奇数点 +4 倍率（A 算 1）',
-    cost: 5,
+    cost: 4,
     rarity: 'common',
     onScored: (ctx, m) => {
       m.mult += 4 * ctx.scoring.filter((c) => c.rank % 2 === 1).length;
@@ -359,7 +362,7 @@ export const JOKERS: JokerDef[] = [
     id: 'high-ranks',
     name: '大牌压',
     desc: '每张计分的 10 / J / Q / K / A +12 筹码',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onScored: (ctx, m) => {
       m.chips += 12 * ctx.scoring.filter((c) => c.rank >= 10).length;
@@ -369,7 +372,7 @@ export const JOKERS: JokerDef[] = [
     id: 'low-ranks',
     name: '小牌撬',
     desc: '每张计分的 2–5 点 +5 倍率',
-    cost: 5,
+    cost: 4,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       m.mult += 5 * ctx.scoring.filter((c) => c.rank <= 5).length;
@@ -379,7 +382,7 @@ export const JOKERS: JokerDef[] = [
     id: 'court-bounty',
     name: '人头赏',
     desc: '每张计分的 J / Q / K +$1',
-    cost: 6,
+    cost: 5,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       m.money += ctx.scoring.filter((c) => c.rank >= 11 && c.rank <= 13).length;
@@ -389,7 +392,7 @@ export const JOKERS: JokerDef[] = [
     id: 'king-tower',
     name: '王塔',
     desc: '每张计分的 K ×1.5 倍率',
-    cost: 7,
+    cost: 6,
     rarity: 'rare',
     onScored: (ctx, m) => {
       const kings = ctx.scoring.filter((c) => c.rank === 13).length;
@@ -400,7 +403,7 @@ export const JOKERS: JokerDef[] = [
     id: 'queen-garden',
     name: '后园',
     desc: '每张计分的 Q +6 倍率',
-    cost: 5,
+    cost: 4,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       m.mult += 6 * ctx.scoring.filter((c) => c.rank === 12).length;
@@ -410,7 +413,7 @@ export const JOKERS: JokerDef[] = [
     id: 'ace-anchor',
     name: '王牌锚',
     desc: '每张计分的 A +25 筹码、+2 倍率',
-    cost: 6,
+    cost: 5,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       const aces = ctx.scoring.filter((c) => c.rank === 14).length;
@@ -424,7 +427,7 @@ export const JOKERS: JokerDef[] = [
     id: 'spade-bounty',
     name: '黑桃赏',
     desc: '每张计分的黑桃 +$1',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onScored: (ctx, m) => {
       m.money += ctx.scoring.filter((c) => c.suit === 'spade').length;
@@ -434,7 +437,7 @@ export const JOKERS: JokerDef[] = [
     id: 'gild-keeper',
     name: '镀金匠',
     desc: '计分牌里有金砂蜡封时 +$3',
-    cost: 6,
+    cost: 5,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       if (ctx.scoring.some((c) => c.seal === 'gold')) m.money += 3;
@@ -444,7 +447,7 @@ export const JOKERS: JokerDef[] = [
     id: 'pauper',
     name: '穷汉',
     desc: '资金 ≤ $5 时 +18 倍率',
-    cost: 5,
+    cost: 4,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       if (ctx.money <= 5) m.mult += 18;
@@ -454,7 +457,7 @@ export const JOKERS: JokerDef[] = [
     id: 'rich-tax',
     name: '富税',
     desc: '资金 ≥ $25 时 ×2 倍率',
-    cost: 8,
+    cost: 7,
     rarity: 'rare',
     onScored: (ctx, m) => {
       if (ctx.money >= 25) m.xMult *= 2;
@@ -464,7 +467,7 @@ export const JOKERS: JokerDef[] = [
     id: 'frugal-purse',
     name: '铁钱包',
     desc: '本回合还没弃过牌时 +$2',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onScored: (ctx, m) => {
       if (ctx.discardsUsed === 0) m.money += 2;
@@ -474,7 +477,7 @@ export const JOKERS: JokerDef[] = [
     id: 'scavenger',
     name: '拾荒',
     desc: '回合结束每剩 1 次出牌 +$1',
-    cost: 6,
+    cost: 5,
     rarity: 'uncommon',
     onRoundEnd: (ctx) => ctx.handsLeft,
   },
@@ -482,7 +485,7 @@ export const JOKERS: JokerDef[] = [
     id: 'miser',
     name: '守财',
     desc: '回合结束若资金 ≥ $10，+$2',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onRoundEnd: (ctx) => (ctx.money >= 10 ? 2 : 0),
   },
@@ -490,7 +493,7 @@ export const JOKERS: JokerDef[] = [
     id: 'ante-stipend',
     name: '底注津贴',
     desc: '回合结束 +$1；底注 ≥ 3 时改为 +$3',
-    cost: 5,
+    cost: 4,
     rarity: 'common',
     onRoundEnd: (ctx) => (ctx.ante >= 3 ? 3 : 1),
   },
@@ -500,7 +503,7 @@ export const JOKERS: JokerDef[] = [
     id: 'dump-truck',
     name: '弃牌车',
     desc: '本回合已弃 2 次以上时 +40 筹码',
-    cost: 5,
+    cost: 4,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       if (ctx.discardsUsed >= 2) m.chips += 40;
@@ -510,7 +513,7 @@ export const JOKERS: JokerDef[] = [
     id: 'last-hand',
     name: '背水',
     desc: '只剩 1 次出牌时 ×2 倍率',
-    cost: 8,
+    cost: 7,
     rarity: 'rare',
     onScored: (ctx, m) => {
       if (ctx.handsLeft <= 1) m.xMult *= 2;
@@ -520,7 +523,7 @@ export const JOKERS: JokerDef[] = [
     id: 'opening',
     name: '先手',
     desc: '本回合一次牌都没出过（剩 4 次）时 +10 倍率',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onScored: (ctx, m) => {
       if (ctx.handsLeft >= 4) m.mult += 10;
@@ -530,7 +533,7 @@ export const JOKERS: JokerDef[] = [
     id: 'frugal',
     name: '不弃',
     desc: '本回合没弃过牌时 ×1.5 倍率',
-    cost: 7,
+    cost: 6,
     rarity: 'rare',
     onScored: (ctx, m) => {
       if (ctx.discardsUsed === 0) m.xMult *= 1.5;
@@ -540,7 +543,7 @@ export const JOKERS: JokerDef[] = [
     id: 'dump-chips',
     name: '弃换筹',
     desc: '本回合每弃 1 次 +20 筹码',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onScored: (ctx, m) => {
       m.chips += 20 * ctx.discardsUsed;
@@ -550,7 +553,7 @@ export const JOKERS: JokerDef[] = [
     id: 'triple',
     name: '三张流',
     desc: '恰好打出 3 张时 +12 倍率',
-    cost: 4,
+    cost: 3,
     rarity: 'common',
     onScored: (ctx, m) => {
       if (ctx.played.length === 3) m.mult += 12;
@@ -560,7 +563,7 @@ export const JOKERS: JokerDef[] = [
     id: 'duo',
     name: '两张牌',
     desc: '恰好打出 2 张时 +8 倍率',
-    cost: 3,
+    cost: 2,
     rarity: 'common',
     onScored: (ctx, m) => {
       if (ctx.played.length === 2) m.mult += 8;
@@ -570,7 +573,7 @@ export const JOKERS: JokerDef[] = [
     id: 'quad',
     name: '四张牌',
     desc: '恰好打出 4 张时 ×1.5 倍率',
-    cost: 5,
+    cost: 4,
     rarity: 'uncommon',
     onScored: (ctx, m) => {
       if (ctx.played.length === 4) m.xMult *= 1.5;

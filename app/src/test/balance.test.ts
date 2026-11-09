@@ -84,9 +84,9 @@ const ARCHETYPES: Archetype[] = [
 ];
 
 describe('P4 目标曲线', () => {
-  it('3 个底注 × 3 个盲注 = 9 个目标', () => {
-    expect(MAX_ANTE).toBe(3);
-    expect(ANTE_TARGETS).toHaveLength(3);
+  it('8 个底注 × 3 个盲注 = 24 个目标', () => {
+    expect(MAX_ANTE).toBe(8);
+    expect(ANTE_TARGETS).toHaveLength(8);
     for (const row of ANTE_TARGETS) expect(row).toHaveLength(3);
   });
 
@@ -96,30 +96,31 @@ describe('P4 目标曲线', () => {
       expect(flat[i], `第 ${i + 1} 个目标`).toBeGreaterThan(flat[i - 1]);
     }
     expect(targetFor(1, 0)).toBe(flat[0]);
-    expect(targetFor(3, 2)).toBe(flat[flat.length - 1]);
+    expect(targetFor(MAX_ANTE, 2)).toBe(flat[flat.length - 1]);
   });
 
-  it('每底注起点涨幅 ≤ 2.7×，且每个小步 ≤ 1.6×（防止某一级突然翻几倍）', () => {
+  it('底注内三档渐进（1 : 1.5 : 2），每个小步 ≤ 1.6×', () => {
     for (let i = 0; i < ANTE_TARGETS.length; i++) {
       const row = ANTE_TARGETS[i];
-      const prev = i === 0 ? 300 : ANTE_TARGETS[i - 1][2];
-      expect(row[0] / prev, `第 ${i + 1} 底注起点`).toBeLessThanOrEqual(2.7);
-      // 同一底注内三档之间也是渐进的（当前是 1.5 / 1.33 左右）
       expect(row[1] / row[0], `第 ${i + 1} 底注 小盲→大盲`).toBeLessThanOrEqual(1.6);
       expect(row[2] / row[1], `第 ${i + 1} 底注 大盲→Boss`).toBeLessThanOrEqual(1.6);
     }
   });
 
-  it('末位 / 首位 ≤ 13×（原验收的 6× 是 2 底注口径，9 个盲注后放宽）', () => {
-    const flat = ANTE_TARGETS.flat();
-    const ratio = flat[flat.length - 1] / flat[0];
-    expect(ratio).toBeGreaterThan(6);
-    expect(ratio).toBeLessThanOrEqual(13);
+  it('跨底注的 Boss 目标涨幅在 2.0–2.7×（指数但可控）', () => {
+    for (let i = 1; i < ANTE_TARGETS.length; i++) {
+      const ratio = ANTE_TARGETS[i][2] / ANTE_TARGETS[i - 1][2];
+      expect(ratio, `第 ${i} → ${i + 1} 底注 Boss`).toBeGreaterThanOrEqual(2.0);
+      expect(ratio, `第 ${i} → ${i + 1} 底注 Boss`).toBeLessThanOrEqual(2.7);
+    }
   });
 });
 
-describe('P4 三套构筑能不能打过最后一个 Boss', () => {
-  const finalTarget = targetFor(MAX_ANTE, 2);
+describe('P4 三套构筑能不能打过第三个底注的 Boss', () => {
+  // 这三套是「成型期」的构筑：Lv2–3、五件套、总价 ≤ $25。
+  // 用底注 3 的 Boss 当标尺，因为那是它们应该能过的关卡；
+  // 8 底注的终局另有一条满配断言（见下一组）。
+  const finalTarget = Math.round(targetFor(3, 2) * 1.5); // 最坏情况：铁壁 ×1.5
 
   it.each(ARCHETYPES.map((a) => [a.name, a] as const))(
     '%s：构筑价格 ≤ $30，且 3 手就能清掉最终目标',
@@ -135,6 +136,13 @@ describe('P4 三套构筑能不能打过最后一个 Boss', () => {
   it('三套构筑的主力牌型互不相同（不是同一个思路的三种写法）', () => {
     const types = new Set(ARCHETYPES.map((a) => a.expected));
     expect(types.size).toBe(3);
+  });
+
+  it('满配同花（Lv8 + 增强牌 + 五件套）4 手能清掉最终目标', () => {
+    const enhanced = FLUSH_HAND.map((c) => ({ ...c, enhancement: 'mult' as const }));
+    const build = jokers('flushfaith', 'heart-tithe', 'mono-five', 'prism', 'fission');
+    const one = scoreOf(enhanced, build, levels({ flush: 8 }));
+    expect(one.score * 4).toBeGreaterThanOrEqual(targetFor(MAX_ANTE, 2));
   });
 
   it('空槽（不买任何东西）打不过底注 3 的第一个盲注——成长是必须的', () => {

@@ -123,6 +123,16 @@ describe('P4 小丑池规模与配额', () => {
     }
   });
 
+  it('价格分档：最低 $2、最高 $7，且普通 ≤ 罕见 ≤ 稀有', () => {
+    const maxOf = (r: string) => Math.max(...JOKERS.filter((j) => j.rarity === r).map((j) => j.cost));
+    for (const j of JOKERS) {
+      expect(j.cost, j.id).toBeGreaterThanOrEqual(2);
+      expect(j.cost, j.id).toBeLessThanOrEqual(7);
+    }
+    expect(maxOf('common')).toBeLessThanOrEqual(maxOf('uncommon'));
+    expect(maxOf('uncommon')).toBeLessThanOrEqual(maxOf('rare'));
+  });
+
   it('至少有一个效果通道（不然就是死牌）', () => {
     for (const j of JOKERS) {
       expect(!!j.onScored || !!j.onRoundEnd, j.id).toBe(true);

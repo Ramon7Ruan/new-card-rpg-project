@@ -11,6 +11,14 @@ import {
 } from '../core/blinds';
 import { ENHANCEMENT_LABEL } from '../core/cards';
 import { getConsumable } from '../core/consumables';
+import { DECKS, DEFAULT_DECK, deckSize, getDeck, type DeckId } from '../core/decks';
+import {
+  DEFAULT_DIFFICULTY,
+  DIFFICULTIES,
+  getDifficulty,
+  scaledTarget,
+  type DifficultyId,
+} from '../core/difficulty';
 import { HAND_LABEL } from '../core/hands';
 import { getJoker } from '../core/jokers';
 import { getPack, packSlot } from '../core/packs';
@@ -40,6 +48,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
   const [state, dispatch] = useReducer(reducer, undefined, () => initialState ?? loadRun() ?? createRun());
   const [anim, setAnim] = useState<AnimState | null>(null);
   const [showLevels, setShowLevels] = useState(false);
+  const [showNewRun, setShowNewRun] = useState(false);
   const [deckOpen, setDeckOpen] = useState(false);
   /** 正在等目标牌的符咒在消耗品槽里的下标；null = 没有待选目标的符咒 */
   const [pendingCharm, setPendingCharm] = useState<number | null>(null);
@@ -120,13 +129,14 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
     setAnim({ result, played: selectedCards, step: 0 });
   }
 
-  function handleNewRun() {
+  function handleNewRun(deckId: DeckId = state.deckId, difficulty: DifficultyId = state.difficulty) {
     clearRun();
     setAnim(null);
     setPendingCharm(null);
     setPicked([]);
     setDeckOpen(false);
-    dispatch({ type: 'newRun' });
+    setShowNewRun(false);
+    dispatch({ type: 'newRun', deckId, difficulty });
   }
 
   /**
@@ -220,7 +230,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
         <div className="stack">
           <span className="label">底注</span>
           <span className="value">
-            {state.ante} / {MAX_ANTE}
+            {state.ante} / {state.maxAnte}
           </span>
         </div>
         <div className="stack">
@@ -245,7 +255,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
           <button className="ghost-btn" onClick={() => setShowLevels(true)}>
             牌型等级
           </button>
-          <button className="ghost-btn" onClick={handleNewRun}>
+          <button className="ghost-btn" onClick={() => setShowNewRun(true)}>
             重开
           </button>
         </div>
@@ -279,10 +289,12 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
           <div className="round-head">
             <div className="target">选择本回合的盲注</div>
             <div className="target">
-              第 <b>{state.ante}</b> / {MAX_ANTE} 底注
+              第 <b>{state.ante}</b> / {state.maxAnte} 底注
             </div>
             <div className="spacer" style={{ flex: 1 }} />
-            <span className="seed">SEED {state.seed}</span>
+            <span className="seed">
+              SEED {state.seed} · {getDeck(state.deckId)?.name ?? '标准牌组'}
+            </span>
           </div>
           <div className="blind-list">
             {[0, 1, 2].map((i) => {
@@ -290,9 +302,12 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
               const isDone = i < state.blindIndex;
               const boss = i === 2 ? bossPreview : null;
               const effects = boss ? describeBlindRule(boss.rule).join(' · ') : '';
-              const req = boss
-                ? Math.round(targetFor(state.ante, i) * (boss.rule.targetMultiplier ?? 1))
-                : targetFor(state.ante, i);
+              const req = scaledTarget(
+                targetFor(state.ante, i),
+                i,
+                state.difficulty,
+                boss?.rule.targetMultiplier ?? 1,
+              );
               return (
                 <button
                   key={i}
@@ -352,7 +367,9 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
               还需 <b>{remaining}</b>
             </div>
             <div className="spacer" style={{ flex: 1 }} />
-            <span className="seed">SEED {state.seed}</span>
+            <span className="seed">
+              SEED {state.seed} · {getDeck(state.deckId)?.name ?? '标准牌组'}
+            </span>
           </div>
           <div className="progress">
             {preview && progressWithPreview > progress && (
@@ -467,13 +484,14 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
         />
       )}
       {state.pack && <PackPanel state={state} dispatch={dispatch} />}
+      {showNewRun && <NewRunPanel onStart={handleNewRun} onClose={() => setShowNewRun(false)} />}
       {(state.phase === 'won' || state.phase === 'lost') && (
         <div className="overlay">
           <div className="panel">
             <h2>{state.phase === 'won' ? '通关' : '失败'}</h2>
             <p className="sub">
               {state.phase === 'won'
-                ? `打完 ${MAX_ANTE} 个底注、共 ${MAX_ANTE * 3} 个盲注，最终资金 $${state.money}。`
+                ? `打完 ${state.maxAnte} 个底注、共 ${state.maxAnte * 3} 个盲注（${getDifficulty(state.difficulty)?.name ?? '普通'}难度），最终资金 $${state.money}。`
                 : `出牌次数用尽，得分 ${state.roundScore} / ${state.target}。`}
             </p>
             <div className="ledger">
@@ -488,7 +506,7 @@ export default function App({ initialState }: { initialState?: RunState } = {}) 
             </div>
             <div className="panel-actions">
               <div className="spacer" />
-              <button className="btn btn-primary" onClick={handleNewRun}>
+              <button className="btn btn-primary" onClick={() => handleNewRun()}>
                 再来一局
               </button>
             </div>
@@ -871,6 +889,79 @@ function PackPanel({ state, dispatch }: { state: RunState; dispatch: Dispatch<Ac
           <div className="spacer" />
           <button className="btn" onClick={() => dispatch({ type: 'skipPack' })}>
             跳过
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 新的一局：选牌组 + 难度再开局 */
+export function NewRunPanel({
+  onStart,
+  onClose,
+}: {
+  onStart: (deckId: DeckId, difficulty: DifficultyId) => void;
+  onClose: () => void;
+}) {
+  const [deckId, setDeckId] = useState<DeckId>(DEFAULT_DECK);
+  const [difficulty, setDifficulty] = useState<DifficultyId>(DEFAULT_DIFFICULTY);
+  const deck = getDeck(deckId);
+  const diff = getDifficulty(difficulty);
+
+  return (
+    <div className="overlay">
+      <div className="panel">
+        <h2>新的一局</h2>
+        <p className="sub">牌组只改整副牌的构成；难度只改打几个底注与 Boss 目标系数。</p>
+
+        <div className="newrun-section">
+          <span className="newrun-label">牌组</span>
+          <div className="deck-list">
+            {DECKS.map((d) => (
+              <button
+                key={d.id}
+                className={`deck-card ${d.id === deckId ? 'is-active' : ''}`}
+                onClick={() => setDeckId(d.id)}
+              >
+                <span className="deck-head">
+                  <span className="deck-name">{d.name}</span>
+                  <span className="deck-count">{`${deckSize(d)} 张`}</span>
+                </span>
+                <span className="deck-desc">{d.desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="newrun-section">
+          <span className="newrun-label">难度</span>
+          <div className="diff-list">
+            {DIFFICULTIES.map((d) => (
+              <button
+                key={d.id}
+                className={`diff-card ${d.id === difficulty ? 'is-active' : ''}`}
+                onClick={() => setDifficulty(d.id)}
+              >
+                <span className="diff-name">{d.name}</span>
+                <span className="diff-antes">{`${d.antes} 底注`}</span>
+                <span className="diff-desc">{d.desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <p className="newrun-summary">
+          {`${deck?.name ?? '标准牌组'} · ${diff?.name ?? '普通'} · ${diff?.antes ?? 5} 个底注 · 起始 ${deck ? deckSize(deck) : 52} 张牌`}
+        </p>
+
+        <div className="panel-actions">
+          <div className="spacer" />
+          <button className="btn" onClick={onClose}>
+            取消
+          </button>
+          <button className="btn btn-primary" onClick={() => onStart(deckId, difficulty)}>
+            开始
           </button>
         </div>
       </div>

@@ -9,14 +9,19 @@ export const BLIND_REWARDS = [3, 4, 5] as const;
  * 每个底注 3 个盲注，第三个是 Boss 位。
  * 加底注只需在此追加一行，状态机不需要改。
  *
- * 3 个底注（P4）：目标从 300 缓升到 3600，末位/首位 = 12×。
- * 原验收写的是「第 6 个盲注不超过第 1 个的 6 倍」，那是 2 底注时代的约束；
- * 扩到 9 个盲注后按同一思路重新表述为**每底注涨幅 ≤ 2.7×**，见 balance.test.ts。
+ * 8 个底注（P5）：24 个盲注，目标从 300 涨到 200000。
+ * 曲线口径：**每个底注的 Boss 目标是上一个底注 Boss 的 2.2–2.5 倍**，
+ * 底注内三档仍是 1 : 1.5 : 2。暴涨全靠构筑强度，不是靠某一级突然翻倍。
  */
 export const ANTE_TARGETS: number[][] = [
   [300, 450, 600],
   [800, 1200, 1600],
   [2000, 2800, 3600],
+  [4500, 6300, 8000],
+  [10000, 14000, 18000],
+  [23000, 32000, 40000],
+  [50000, 70000, 90000],
+  [110000, 155000, 200000],
 ];
 
 /** 一局要打多少个底注 */
@@ -45,16 +50,38 @@ export interface BossDef {
 }
 
 /**
- * 6 个 Boss。名字与文案自拟，机制层面为通用玩法设计。
+ * 20 个 Boss。名字与文案自拟，机制层面为通用玩法设计。
  * 全部用声明式规则表达，禁止写 apply(state) 函数——否则存档无法序列化。
+ *
+ * P5 新增 14 个，刻意把字段**组合**用起来（目标系数 × 手牌上限、禁弃 × 人头压制…），
+ * 而不是再造一批「只改一个数」的 Boss。唯一的新字段是 handsDelta / discardsDelta。
  */
 export const BOSSES: BossDef[] = [
+  // ── 单字段（原有 6 个） ──
   { id: 'rampart', name: '铁壁', rule: { targetMultiplier: 1.5 } },
   { id: 'drought', name: '干涸', rule: { forbidDiscards: true } },
   { id: 'girdle', name: '束带', rule: { handSizeDelta: -1 } },
   { id: 'decree', name: '铁律', rule: { requirePlayedCards: 5 } },
   { id: 'fade', name: '失色', rule: {}, randomSuit: true },
   { id: 'nameless', name: '无名', rule: { debuffFace: true } },
+
+  // ── 单字段（P5 新增） ──
+  { id: 'gap', name: '缺口', rule: { handSizeDelta: -2 } },
+  { id: 'amputate', name: '断手', rule: { handsDelta: -1 } },
+  { id: 'famine', name: '断粮', rule: { discardsDelta: -2 } },
+  { id: 'weight', name: '压秤', rule: { targetMultiplier: 1.75 } },
+  { id: 'tithe', name: '苛税', rule: { targetMultiplier: 2 } },
+
+  // ── 双字段组合（P5 新增） ──
+  { id: 'lean', name: '薄利', rule: { targetMultiplier: 1.25, handSizeDelta: -1 } },
+  { id: 'doubleban', name: '双禁', rule: { forbidDiscards: true, debuffFace: true } },
+  { id: 'narrow', name: '窄门', rule: { requirePlayedCards: 4, handSizeDelta: -1 } },
+  { id: 'monotone', name: '单色', rule: { targetMultiplier: 1.25 }, randomSuit: true },
+  { id: 'inverse', name: '逆位', rule: { requirePlayedCards: 5 }, randomSuit: true },
+  { id: 'lag', name: '迟滞', rule: { handsDelta: -1, discardsDelta: -1 } },
+  { id: 'sever', name: '断腕', rule: { handsDelta: -1, targetMultiplier: 1.25 } },
+  { id: 'masked', name: '蒙面', rule: { debuffFace: true, handSizeDelta: -1 } },
+  { id: 'doublelock', name: '双扣', rule: { forbidDiscards: true, requirePlayedCards: 5 } },
 ];
 
 const BOSS_BY_ID = new Map(BOSSES.map((b) => [b.id, b]));
@@ -116,6 +143,8 @@ export function describeBlindRule(rule: BlindRule | null): string[] {
     parts.push(`手牌上限 ${rule.handSizeDelta > 0 ? '+' : ''}${rule.handSizeDelta}`);
   }
   if (rule.requirePlayedCards) parts.push(`每手必须出满 ${rule.requirePlayedCards} 张`);
+  if (rule.handsDelta) parts.push(`出牌次数 ${rule.handsDelta > 0 ? '+' : ''}${rule.handsDelta}`);
+  if (rule.discardsDelta) parts.push(`弃牌次数 ${rule.discardsDelta > 0 ? '+' : ''}${rule.discardsDelta}`);
   if (rule.debuffSuit) parts.push(`花色 ${SUIT_SYMBOL[rule.debuffSuit]} 不计分`);
   if (rule.debuffFace) parts.push('J / Q / K 不计分');
   return parts;

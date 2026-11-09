@@ -17,8 +17,9 @@ describe('P2-1 Card 契约：牌多出增强 / 蜡封字段', () => {
     return raw;
   };
 
-  it('版本号是当前 v5', () => {
-    expect(SAVE_VERSION).toBe(5);
+  it('版本号是当前 v7', () => {
+    // 每次改 RunState 结构都要改这里：数字是给人看的，忘了改说明也忘了迁移
+    expect(SAVE_VERSION).toBe(7);
   });
 
   it('v3 的普通牌读入后仍是普通牌，数量不变', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { targetFor } from '../core/blinds';
-import { MAX_ANTE } from '../core/blinds';
+import { ANTE_TARGETS, MAX_ANTE, rollBoss, targetFor } from '../core/blinds';
+import { scaledTarget } from '../core/difficulty';
 import { card, sortHand } from '../core/cards';
 import { createRun, HANDS_PER_ROUND, reducer } from '../core/run';
 import { CONSUMABLE_SHELF, JOKER_SHELF } from '../core/shop';
@@ -141,31 +141,31 @@ describe('单局状态机', () => {
   it('推进顺序：3 个盲注后进入下一底注，目标逐级提高', () => {
     const seen: string[] = [];
     let s = startPlaying();
+    const total = s.maxAnte * 3;
 
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < total; i++) {
       seen.push(`a${s.ante}b${s.blindIndex}=${s.target}`);
       s = reducer(finishRound(s), { type: 'leaveShop' });
-      if (i < 8) s = reducer(s, { type: 'selectBlind' });
+      if (i < total - 1) s = reducer(s, { type: 'selectBlind' });
     }
 
-    expect(seen).toEqual([
-      'a1b0=300',
-      'a1b1=450',
-      'a1b2=600',
-      'a2b0=800',
-      'a2b1=1200',
-      'a2b2=1600',
-      'a3b0=2000',
-      'a3b1=2800',
-      'a3b2=3600',
-    ]);
+    // 期望序列由目标表生成：加底注时这条测试不用改。
+    // Boss 位还要乘上该底注抽到的 Boss 系数（铁壁 ×1.5 之类）。
+    // 只取本局难度覆盖到的底注（默认普通 = 5 个），并乘上 Boss 系数与难度系数
+    const expected = ANTE_TARGETS.slice(0, s.maxAnte).flatMap((row, ai) =>
+      row.map((t, bi) => {
+        const mult = bi === 2 ? (rollBoss('TESTSEED', ai + 1).rule.targetMultiplier ?? 1) : 1;
+        return `a${ai + 1}b${bi}=${scaledTarget(t, bi, 'normal', mult)}`;
+      }),
+    );
+    expect(seen).toEqual(expected);
     // 最后一个底注的 Boss 打完即通关，不再进商店
     expect(s.phase).toBe('won');
   });
 
   it('底注与盲注越界时 targetFor 取最后一个底注的值', () => {
     expect(targetFor(3, 0)).toBe(2000);
-    expect(targetFor(99, 2)).toBe(3600);
+    expect(targetFor(99, 2)).toBe(ANTE_TARGETS[ANTE_TARGETS.length - 1][2]);
     expect(targetFor(0, 0)).toBe(300);
   });
 
@@ -179,8 +179,9 @@ describe('单局状态机', () => {
 });
 
 describe('P4 关卡规模：3 个底注 / 9 个盲注', () => {
-  it('MAX_ANTE 是 3', () => {
-    expect(MAX_ANTE).toBe(3);
+  it('MAX_ANTE 是 8（24 个盲注）', () => {
+    expect(MAX_ANTE).toBe(8);
+    expect(ANTE_TARGETS).toHaveLength(8);
   });
 
   it('重摇基础价随底注 +$1（$5 / $6 / $7）', () => {
@@ -203,7 +204,7 @@ describe('P4 关卡规模：3 个底注 / 9 个盲注', () => {
     }
   });
 
-  it('底注 3 的 Boss 打完才通关，底注 2 打完还要继续', () => {
+  it('最后一个底注的 Boss 打完才通关，倒数第二个打完还要继续', () => {
     const at = (ante: number): RunState => ({
       ...createRun('WINCHECK'),
       phase: 'cashOut',
@@ -213,8 +214,8 @@ describe('P4 关卡规模：3 个底注 / 9 个盲注', () => {
       money: 10,
       hand: [],
     });
-    expect(reducer(at(2), { type: 'cashOut' }).phase).toBe('shop');
-    expect(reducer(at(3), { type: 'cashOut' }).phase).toBe('won');
+    expect(reducer(at(4), { type: 'cashOut' }).phase).toBe('shop');
+    expect(reducer(at(5), { type: 'cashOut' }).phase).toBe('won');
   });
 });
 

@@ -5,7 +5,7 @@ import type { HandType, RunState } from './types';
 /** 消耗品槽位上限 */
 export const MAX_CONSUMABLES = 2;
 /** 铭文统一售价。12 种价值相近，用差价只会诱导「只买某一种」。 */
-export const CONSUMABLE_COST = 3;
+export const CONSUMABLE_COST = 2;
 
 export type ConsumableKind = 'planet' | 'charm';
 

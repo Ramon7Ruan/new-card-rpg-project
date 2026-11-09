@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BOSSES } from '../core/blinds';
+import { BOSSES, MAX_ANTE } from '../core/blinds';
 import { card } from '../core/cards';
 import { getConsumable } from '../core/consumables';
 import { initialHandLevels } from '../core/hands';
@@ -24,7 +24,7 @@ function countCards(s: RunState): number {
   return s.deck.length + s.hand.length + s.discardPile.length;
 }
 
-describe('E2E：6 个 Boss 各自能完整走一手', () => {
+describe('E2E：20 个 Boss 各自能完整走一手', () => {
   for (const boss of BOSSES) {
     it(`${boss.name}：进入 → 出牌 → 结算，状态自洽`, () => {
       let s = enterBoss('E2E', boss.id);
@@ -36,9 +36,11 @@ describe('E2E：6 个 Boss 各自能完整走一手', () => {
       for (const c of s.hand.slice(0, need)) {
         s = reducer(s, { type: 'toggleCard', cardId: c.id });
       }
+      const handsBefore = s.handsLeft;
       s = reducer(s, { type: 'playHand' });
 
-      expect(s.handsLeft).toBe(3);
+      // 出牌次数可能被 Boss 扣过，所以只断言「用掉一次」
+      expect(s.handsLeft).toBe(handsBefore - 1);
       expect(s.roundScore).toBeGreaterThan(0);
       expect(s.selected).toHaveLength(0);
       expect(countCards(s)).toBe(52);
@@ -48,12 +50,14 @@ describe('E2E：6 个 Boss 各自能完整走一手', () => {
   }
 });
 
-describe('E2E：完整一局（3 底注 × 3 盲注）', () => {
-  it('九个盲注顺序正确，最后进入 won', () => {
-    let s = createRun('E2E-RUN');
+describe('E2E：完整一局（8 底注 × 3 盲注）', () => {
+  it('24 个盲注顺序正确，最后进入 won', () => {
+    // 用「地狱」跑满 8 个底注，顺带验证最长的那条路
+    let s = createRun('E2E-RUN', 'standard', 'hell');
     const visits: string[] = [];
+    const total = s.maxAnte * 3;
 
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < total; i++) {
       visits.push(`a${s.ante}b${s.blindIndex}`);
       s = reducer(s, { type: 'selectBlind' });
       expect(s.phase).toBe('playing');
@@ -71,17 +75,10 @@ describe('E2E：完整一局（3 底注 × 3 盲注）', () => {
       if (s.phase === 'shop') s = reducer(s, { type: 'leaveShop' });
     }
 
-    expect(visits).toEqual([
-      'a1b0',
-      'a1b1',
-      'a1b2',
-      'a2b0',
-      'a2b1',
-      'a2b2',
-      'a3b0',
-      'a3b1',
-      'a3b2',
-    ]);
+    const expected = Array.from({ length: MAX_ANTE }, (_, ai) =>
+      [0, 1, 2].map((bi) => `a${ai + 1}b${bi}`),
+    ).flat();
+    expect(visits).toEqual(expected);
     expect(s.phase).toBe('won');
   });
 

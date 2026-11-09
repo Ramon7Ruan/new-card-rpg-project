@@ -34,16 +34,46 @@ const RULE_KEYS = new Set<keyof BlindRule>([
   'requirePlayedCards',
   'debuffSuit',
   'debuffFace',
+  'handsDelta',
+  'discardsDelta',
 ]);
 
-describe('S1 Boss 数据表', () => {
-  it('恰好 6 个 Boss，id 与名字都不重复', () => {
-    expect(BOSSES).toHaveLength(6);
-    expect(new Set(BOSSES.map((b) => b.id)).size).toBe(6);
-    expect(new Set(BOSSES.map((b) => b.name)).size).toBe(6);
+/** 一个 Boss 实际生效的字段（randomSuit 会把 debuffSuit 补进来，这里只数静态规则） */
+const activeKeys = (rule: BlindRule, randomSuit?: boolean): string[] => {
+  const keys = Object.keys(rule).filter((k) => {
+    const v = (rule as Record<string, unknown>)[k];
+    return v !== undefined && v !== false && v !== 0 && v !== 1;
+  });
+  if (randomSuit) keys.push('debuffSuit');
+  return keys;
+};
+
+describe('P5 Boss 数据表：20 个', () => {
+  it('恰好 20 个 Boss，id 与名字都不重复', () => {
+    expect(BOSSES).toHaveLength(20);
+    expect(new Set(BOSSES.map((b) => b.id)).size).toBe(20);
+    expect(new Set(BOSSES.map((b) => b.name)).size).toBe(20);
   });
 
-  it('规则只用已知字段，且都是纯数据', () => {
+  it('至少 5 个 Boss 用了两个以上字段的组合（不是「只改一个数」的新瓶装旧酒）', () => {
+    const combos = BOSSES.filter((b) => activeKeys(b.rule, b.randomSuit).length >= 2);
+    expect(combos.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('至少 3 个 Boss 用到了 P5 新增的出牌/弃牌次数字段', () => {
+    const usesNewField = BOSSES.filter(
+      (b) => b.rule.handsDelta !== undefined || b.rule.discardsDelta !== undefined,
+    );
+    expect(usesNewField.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('每个 Boss 都有实际效果（规则非空，或靠随机花色生效）', () => {
+    for (const b of BOSSES) {
+      expect(activeKeys(b.rule, b.randomSuit).length, b.id).toBeGreaterThan(0);
+    }
+  });
+
+  it('规则只用已知字段，且都是纯数据（P5 扩了两个字段）', () => {
     for (const boss of BOSSES) {
       for (const key of Object.keys(boss.rule)) {
         expect(RULE_KEYS.has(key as keyof BlindRule)).toBe(true);
@@ -89,18 +119,21 @@ describe('S1 rollBoss 确定性', () => {
     expect(ids.size).toBeGreaterThan(1);
   });
 
-  it('失色一定解析出一种合法花色，其他 Boss 不带花色', () => {
-    let checked = 0;
-    for (let i = 0; i < 200 && checked < 20; i++) {
+  it('带 randomSuit 的 Boss 一定解析出一种合法花色，其余不带花色', () => {
+    let withSuit = 0;
+    let withoutSuit = 0;
+    for (let i = 0; i < 200; i++) {
       const { boss, rule } = rollBoss(`FADE${i}`, 1);
-      if (boss.id !== 'fade') {
-        expect(rule.debuffSuit).toBeUndefined();
-        continue;
+      if (boss.randomSuit) {
+        withSuit += 1;
+        expect(SUITS).toContain(rule.debuffSuit);
+      } else {
+        withoutSuit += 1;
+        expect(rule.debuffSuit, boss.id).toBeUndefined();
       }
-      checked += 1;
-      expect(SUITS).toContain(rule.debuffSuit);
     }
-    expect(checked).toBeGreaterThan(0);
+    expect(withSuit).toBeGreaterThan(0);
+    expect(withoutSuit).toBeGreaterThan(0);
   });
 });
 
@@ -142,6 +175,83 @@ describe('S2 规则在进入盲注时生效', () => {
 
   it('无名：规则标记人头牌不计分', () => {
     const s = enterBoss('F', 'nameless');
+    expect(s.bossRule?.debuffFace).toBe(true);
+  });
+
+  // ── P5 新增 Boss 的规则落地 ──
+  it('缺口：手牌上限降为 6', () => {
+    const s = enterBoss('G1', 'gap');
+    expect(s.handSize).toBe(6);
+    expect(s.hand).toHaveLength(6);
+    expect(countCards(s)).toBe(52);
+  });
+
+  it('断手：出牌次数 4 → 3，弃牌不变', () => {
+    const s = enterBoss('G2', 'amputate');
+    expect(s.handsLeft).toBe(3);
+    expect(s.discardsLeft).toBe(3);
+  });
+
+  it('断粮：弃牌次数 3 → 1', () => {
+    const s = enterBoss('G3', 'famine');
+    expect(s.discardsLeft).toBe(1);
+    expect(s.handsLeft).toBe(4);
+  });
+
+  it('迟滞：出牌 3、弃牌 2（两个减益同时生效）', () => {
+    const s = enterBoss('G4', 'lag');
+    expect(s.handsLeft).toBe(3);
+    expect(s.discardsLeft).toBe(2);
+  });
+
+  it('压秤 / 苛税：目标分别 ×1.75 与 ×2', () => {
+    expect(enterBoss('G5', 'weight').target).toBe(Math.round(600 * 1.75));
+    expect(enterBoss('G6', 'tithe').target).toBe(1200);
+  });
+
+  it('薄利：目标 ×1.25 且手牌 7 张', () => {
+    const s = enterBoss('G7', 'lean');
+    expect(s.target).toBe(750);
+    expect(s.handSize).toBe(7);
+  });
+
+  it('窄门：必须出满 4 张，手牌 7 张', () => {
+    const s = enterBoss('G8', 'narrow');
+    expect(s.bossRule?.requirePlayedCards).toBe(4);
+    expect(s.handSize).toBe(7);
+  });
+
+  it('双禁：不能弃牌 + 人头牌不计分', () => {
+    const s = enterBoss('G9', 'doubleban');
+    expect(s.discardsLeft).toBe(0);
+    expect(s.bossRule?.debuffFace).toBe(true);
+  });
+
+  it('双扣：不能弃牌且必须出满 5 张', () => {
+    const s = enterBoss('G10', 'doublelock');
+    expect(s.discardsLeft).toBe(0);
+    expect(s.bossRule?.requirePlayedCards).toBe(5);
+  });
+
+  it('单色 / 逆位：都带一个随机花色，且各自叠加目标系数或出牌要求', () => {
+    const mono = enterBoss('G11', 'monotone');
+    expect(SUITS).toContain(mono.bossRule?.debuffSuit);
+    expect(mono.target).toBe(750);
+
+    const inv = enterBoss('G12', 'inverse');
+    expect(SUITS).toContain(inv.bossRule?.debuffSuit);
+    expect(inv.bossRule?.requirePlayedCards).toBe(5);
+  });
+
+  it('断腕：出牌 3 次且目标 ×1.25', () => {
+    const s = enterBoss('G13', 'sever');
+    expect(s.handsLeft).toBe(3);
+    expect(s.target).toBe(750);
+  });
+
+  it('蒙面：手牌 7 张 + 人头牌不计分', () => {
+    const s = enterBoss('G14', 'masked');
+    expect(s.handSize).toBe(7);
     expect(s.bossRule?.debuffFace).toBe(true);
   });
 

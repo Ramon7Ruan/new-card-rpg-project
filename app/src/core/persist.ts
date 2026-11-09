@@ -1,4 +1,6 @@
 import { getConsumable, MAX_CONSUMABLES } from './consumables';
+import { DEFAULT_DECK, isDeckId } from './decks';
+import { antesFor, DEFAULT_DIFFICULTY, isDifficultyId } from './difficulty';
 import { initialHandLevels } from './hands';
 import { getJoker } from './jokers';
 import { getPack } from './packs';
@@ -230,6 +232,11 @@ export function migrateSave(raw: unknown): RunState | null {
   return {
     ...state,
     version: SAVE_VERSION,
+    // v6：新增牌组字段；旧存档没有就按标准牌组
+    deckId: isDeckId(s.deckId) ? s.deckId : DEFAULT_DECK,
+    // v7：新增难度；maxAnte 由难度推导（不信任存档里的副本，避免两者打架）
+    difficulty: isDifficultyId(s.difficulty) ? s.difficulty : DEFAULT_DIFFICULTY,
+    maxAnte: antesFor(isDifficultyId(s.difficulty) ? s.difficulty : DEFAULT_DIFFICULTY),
     bossId: typeof s.bossId === 'string' ? s.bossId : null,
     bossRule: (s.bossRule as BlindRule | null | undefined) ?? null,
     handSize: typeof s.handSize === 'number' ? s.handSize : HAND_SIZE,

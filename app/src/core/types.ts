@@ -1,5 +1,8 @@
 /** 全局类型定义。所有游戏状态都必须可 JSON 序列化（存档要求）。 */
 
+import type { DeckId } from './decks';
+import type { DifficultyId } from './difficulty';
+
 export type Suit = 'spade' | 'heart' | 'diamond' | 'club';
 
 /** 2..10, 11=J, 12=Q, 13=K, 14=A */
@@ -87,6 +90,10 @@ export interface BlindRule {
   debuffSuit?: Suit;
   /** J/Q/K 不计分 */
   debuffFace?: boolean;
+  /** 本回合出牌次数增量（P5），如 -1 */
+  handsDelta?: number;
+  /** 本回合弃牌次数增量（P5），如 -2 */
+  discardsDelta?: number;
 }
 
 export interface JokerInstance {
@@ -150,6 +157,12 @@ export interface RunState {
   /** 存档结构版本，用于迁移 */
   version: number;
   seed: string;
+  /** 本局使用的牌组（P5），决定整副牌的构成 */
+  deckId: DeckId;
+  /** 本局难度（P5），决定打到第几个底注与 Boss 系数 */
+  difficulty: DifficultyId;
+  /** 这一局要打几个底注（由难度推导，存档里也存一份便于显示） */
+  maxAnte: number;
   ante: number;
   /** 0=小盲 1=大盲 2=Boss */
   blindIndex: number;
